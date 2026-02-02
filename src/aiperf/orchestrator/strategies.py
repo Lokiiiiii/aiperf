@@ -211,8 +211,9 @@ class FixedTrialsStrategy(ExecutionStrategy):
         """
         config = base_config
         
-        # First trial: ensure seed is set
-        if len(results) == 0 and self.auto_set_seed:
+        # Ensure seed is set for all trials when auto_set_seed is enabled
+        # This ensures the seed persists across all runs
+        if self.auto_set_seed:
             config = self._ensure_random_seed(config)
         
         # Subsequent trials: optionally disable warmup

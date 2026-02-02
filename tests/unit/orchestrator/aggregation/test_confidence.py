@@ -23,7 +23,7 @@ class TestConfidenceAggregation:
         strategy = ConfidenceAggregation()
         assert strategy.get_aggregation_type() == "confidence"
 
-    def test_aggregate_with_known_values(self):
+    def test_aggregate_with_known_values(self, tmp_path):
         """Test aggregation with known values."""
         strategy = ConfidenceAggregation(confidence_level=0.95)
         
@@ -33,19 +33,19 @@ class TestConfidenceAggregation:
                 label="run_0001",
                 success=True,
                 summary_metrics={"ttft_avg": 100.0, "tpot_avg": 10.0},
-                artifacts_path=Path("/tmp/run_0001")
+                artifacts_path=tmp_path / "run_0001"
             ),
             RunResult(
                 label="run_0002",
                 success=True,
                 summary_metrics={"ttft_avg": 110.0, "tpot_avg": 12.0},
-                artifacts_path=Path("/tmp/run_0002")
+                artifacts_path=tmp_path / "run_0002"
             ),
             RunResult(
                 label="run_0003",
                 success=True,
                 summary_metrics={"ttft_avg": 105.0, "tpot_avg": 11.0},
-                artifacts_path=Path("/tmp/run_0003")
+                artifacts_path=tmp_path / "run_0003"
             ),
         ]
         

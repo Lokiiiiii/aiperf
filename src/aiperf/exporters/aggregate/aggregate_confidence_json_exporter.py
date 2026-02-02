@@ -75,7 +75,6 @@ class AggregateConfidenceJsonExporter(AggregateBaseExporter):
             "num_profile_runs": self._result.num_runs,
             "num_successful_runs": self._result.num_successful_runs,
             "failed_runs": self._result.failed_runs,
-            "run_labels": [f"run_{i+1:04d}" for i in range(self._result.num_runs)],
             **self._result.metadata,
         }
         setattr(export_data, "metadata", aggregate_metadata)

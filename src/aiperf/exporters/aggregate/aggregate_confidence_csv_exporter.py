@@ -101,6 +101,7 @@ class AggregateConfidenceCsvExporter(AggregateBaseExporter):
                     self._format_number(metric.se, decimals=4),
                     self._format_number(metric.ci_low),
                     self._format_number(metric.ci_high),
+                    self._format_number(metric.t_critical, decimals=4),
                     metric.unit if hasattr(metric, "unit") else "",
                 ]
                 writer.writerow(row)

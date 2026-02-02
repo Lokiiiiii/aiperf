@@ -1124,6 +1124,238 @@ http_req_connection_reused = 1 if connection_reused_perf_ns is not None else 0
 
 ---
 
+## Multi-Run Aggregate Metrics
+
+> [!NOTE]
+> These metrics are only available when using `--num-profile-runs > 1` for confidence reporting.
+
+When running multiple profile iterations with `--num-profile-runs`, AIPerf computes aggregate statistics across all runs to quantify measurement variance and repeatability. These statistics are written to `aggregate/profile_export_aiperf_aggregate.json` and `aggregate/profile_export_aiperf_aggregate.csv`.
+
+### Aggregate Statistics
+
+For each metric from the individual runs, the following statistics are computed:
+
+#### Mean (μ)
+
+**Type:** Aggregate Statistic
+
+The average value of the metric across all successful runs.
+
+**Formula:**
+```python
+mean = sum(values) / n
+```
+
+**Example:**
+If TTFT p99 values across 5 runs are [150ms, 152ms, 148ms, 155ms, 151ms], the mean is 151.2ms.
+
+---
+
+#### Standard Deviation (σ)
+
+**Type:** Aggregate Statistic
+
+Measures the spread or dispersion of metric values across runs. Uses sample standard deviation (N-1 degrees of freedom).
+
+**Formula:**
+```python
+std = sqrt(sum((x - mean)^2) / (n - 1))
+```
+
+**Example:**
+For the TTFT values above, std ≈ 2.59ms, indicating low variability.
+
+---
+
+#### Minimum
+
+**Type:** Aggregate Statistic
+
+The smallest value observed across all runs.
+
+**Example:**
+For the TTFT values above, min = 148ms.
+
+---
+
+#### Maximum
+
+**Type:** Aggregate Statistic
+
+The largest value observed across all runs.
+
+**Example:**
+For the TTFT values above, max = 155ms.
+
+---
+
+#### Coefficient of Variation (CV)
+
+**Type:** Aggregate Statistic
+
+A normalized measure of variability, expressed as a ratio (not percentage). Useful for comparing variability across metrics with different scales.
+
+**Formula:**
+```python
+cv = std / mean
+```
+
+**Interpretation:**
+- **CV < 0.05**: Excellent repeatability (low variance)
+- **CV 0.05-0.10**: Good repeatability (moderate variance)
+- **CV 0.10-0.20**: Fair repeatability (consider more runs)
+- **CV > 0.20**: High variance (investigate or increase runs)
+
+**Example:**
+For the TTFT values above, CV = 2.59 / 151.2 ≈ 0.017 (1.7%), indicating excellent repeatability.
+
+**Notes:**
+- Returns `inf` when mean is zero (division by zero)
+- Lower CV indicates more consistent measurements
+
+---
+
+#### Standard Error (SE)
+
+**Type:** Aggregate Statistic
+
+Measures the uncertainty in the estimated mean. Decreases as sample size increases.
+
+**Formula:**
+```python
+se = std / sqrt(n)
+```
+
+**Example:**
+For the TTFT values above with n=5, SE = 2.59 / sqrt(5) ≈ 1.16ms.
+
+**Notes:**
+- Smaller SE indicates more precise estimate of the true mean
+- SE decreases proportionally to 1/sqrt(n)
+
+---
+
+#### Confidence Interval (CI)
+
+**Type:** Aggregate Statistic
+
+A range that likely contains the true population mean with a specified confidence level (default 95%).
+
+**Formula:**
+```python
+ci_low = mean - t_critical * se
+ci_high = mean + t_critical * se
+```
+
+Where `t_critical` is the critical value from the t-distribution with (n-1) degrees of freedom.
+
+**Interpretation:**
+- **Narrow CI**: High precision, confident in the estimate
+- **Wide CI**: Lower precision, more uncertainty
+- **Non-overlapping CIs**: Strong evidence of a real difference between configurations
+
+**Example:**
+For the TTFT values above with 95% confidence:
+- t_critical ≈ 2.776 (for n=5, df=4)
+- CI = [151.2 - 2.776 * 1.16, 151.2 + 2.776 * 1.16] = [148.0ms, 154.4ms]
+
+We're 95% confident the true mean TTFT is between 148.0ms and 154.4ms.
+
+**Notes:**
+- Uses t-distribution (not normal) for mathematically precise critical values
+- Confidence level configurable via `--confidence-level` (default 0.95)
+- CI width decreases with more runs (larger n)
+
+---
+
+#### t-Critical Value
+
+**Type:** Aggregate Statistic
+
+The critical value from the t-distribution used to compute confidence intervals. Depends on sample size and confidence level.
+
+**Formula:**
+```python
+t_critical = t.ppf(1 - alpha/2, df)
+```
+
+Where:
+- `alpha = 1 - confidence_level`
+- `df = n - 1` (degrees of freedom)
+- `t.ppf` is the percent point function (inverse CDF) of the t-distribution
+
+**Example:**
+- For n=5 runs and 95% confidence: t_critical ≈ 2.776
+- For n=10 runs and 95% confidence: t_critical ≈ 2.262
+- For n=5 runs and 99% confidence: t_critical ≈ 4.604
+
+**Notes:**
+- Computed using scipy.stats.t.ppf() for mathematical precision
+- Larger sample sizes have smaller t-critical values (approach normal distribution)
+- Higher confidence levels have larger t-critical values (wider intervals)
+
+---
+
+### Aggregate Metadata
+
+The aggregate output also includes metadata about the multi-run benchmark:
+
+- **aggregation_type**: Always "confidence" for multi-run confidence reporting
+- **num_profile_runs**: Total number of runs requested
+- **num_successful_runs**: Number of runs that completed successfully
+- **failed_runs**: List of failed runs with error details
+- **confidence_level**: Confidence level used for intervals (e.g., 0.95)
+- **cooldown_seconds**: Cooldown duration between runs
+- **run_labels**: Labels for each run (e.g., ["run_0001", "run_0002", ...])
+
+### Example Aggregate Output
+
+```json
+{
+  "metadata": {
+    "aggregation_type": "confidence",
+    "num_profile_runs": 5,
+    "num_successful_runs": 5,
+    "failed_runs": [],
+    "confidence_level": 0.95,
+    "cooldown_seconds": 0.0,
+    "run_labels": ["run_0001", "run_0002", "run_0003", "run_0004", "run_0005"]
+  },
+  "metrics": {
+    "request_throughput_avg": {
+      "mean": 255.4,
+      "std": 12.3,
+      "min": 240.1,
+      "max": 270.2,
+      "cv": 0.048,
+      "se": 5.5,
+      "ci_low": 243.2,
+      "ci_high": 267.6,
+      "t_critical": 2.776,
+      "unit": "requests/sec"
+    },
+    "ttft_p99_ms": {
+      "mean": 152.7,
+      "std": 12.4,
+      "min": 138.2,
+      "max": 168.9,
+      "cv": 0.081,
+      "se": 5.55,
+      "ci_low": 140.3,
+      "ci_high": 165.1,
+      "t_critical": 2.776,
+      "unit": "ms"
+    }
+  }
+}
+```
+
+### Usage
+
+See the [Multi-Run Confidence Tutorial](tutorials/multi-run-confidence.md) for detailed usage examples and interpretation guidelines.
+
+---
+
 # Metric Flags Reference
 
 Metric flags are used to control when and how metrics are computed, displayed, and grouped. Flags can be combined using bitwise operations to create composite behaviors.

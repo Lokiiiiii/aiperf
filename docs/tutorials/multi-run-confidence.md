@@ -1,0 +1,480 @@
+# Multi-Run Confidence Reporting
+
+## Overview
+
+Multi-run confidence reporting allows you to run the same benchmark configuration multiple times to quantify measurement variance, assess repeatability, and compute confidence intervals for key metrics. This helps answer the critical question: **"Is this performance difference real or just noise?"**
+
+## What is Confidence Reporting?
+
+When you run a single benchmark, the results can vary due to:
+- System jitter (GPU clocks, background tasks)
+- Network variance
+- Server internal scheduling and batching dynamics
+- Periodic stalls or transient errors
+
+By running multiple trials of the same benchmark, you can:
+- **Quantify variance**: Understand how much results vary between runs
+- **Assess repeatability**: Determine if your measurements are stable
+- **Compute confidence intervals**: Get honest uncertainty estimates
+- **Make informed decisions**: Know if performance differences are statistically meaningful
+
+## Basic Usage
+
+### Simple Multi-Run Benchmark
+
+Run the same benchmark 5 times:
+
+```bash
+aiperf profile \
+  --model llama-3-8b \
+  --endpoint-type openai_chat \
+  --url http://localhost:8000/v1/chat/completions \
+  --num-profile-runs 5 \
+  --concurrency 10 \
+  --num-prompts 1000
+```
+
+### With Custom Confidence Level
+
+Use 99% confidence intervals instead of the default 95%:
+
+```bash
+aiperf profile \
+  --model llama-3-8b \
+  --endpoint-type openai_chat \
+  --url http://localhost:8000/v1/chat/completions \
+  --num-profile-runs 5 \
+  --confidence-level 0.99 \
+  --concurrency 10 \
+  --num-prompts 1000
+```
+
+### With Cooldown Between Runs
+
+Add a 10-second cooldown between runs to reduce correlation:
+
+```bash
+aiperf profile \
+  --model llama-3-8b \
+  --endpoint-type openai_chat \
+  --url http://localhost:8000/v1/chat/completions \
+  --num-profile-runs 5 \
+  --profile-run-cooldown-seconds 10.0 \
+  --concurrency 10 \
+  --num-prompts 1000
+```
+
+## Output Structure
+
+When `--num-profile-runs > 1`, AIPerf creates a hierarchical output structure:
+
+```
+artifacts/
+  profile_runs/
+    run_0001/
+      profile_export_aiperf.json
+      profile_export_aiperf.csv
+      profile_export.jsonl
+      inputs.json
+    run_0002/
+      ...
+    run_0005/
+      ...
+  aggregate/
+    profile_export_aiperf_aggregate.json
+    profile_export_aiperf_aggregate.csv
+```
+
+### Per-Run Artifacts
+
+Each run's artifacts are stored in separate directories (`run_0001`, `run_0002`, etc.) and include:
+- `profile_export_aiperf.json` - Complete metrics for that run
+- `profile_export_aiperf.csv` - CSV export for that run
+- `profile_export.jsonl` - Per-request records
+- `inputs.json` - Input prompts used
+
+This allows you to:
+- Debug outliers by examining specific runs
+- Compare individual runs
+- Investigate anomalies
+
+### Aggregate Artifacts
+
+The `aggregate/` directory contains statistics computed across all runs:
+- `profile_export_aiperf_aggregate.json` - Aggregated statistics
+- `profile_export_aiperf_aggregate.csv` - Tabular view of aggregated metrics
+
+## Understanding Aggregate Statistics
+
+For each metric, the aggregate output includes:
+
+- **mean**: Average value across all runs
+- **std**: Standard deviation (measure of spread)
+- **min**: Minimum value observed
+- **max**: Maximum value observed
+- **cv**: Coefficient of Variation (normalized variability)
+- **se**: Standard Error (uncertainty in the mean)
+- **ci_low, ci_high**: Confidence interval bounds
+- **t_critical**: t-distribution critical value used
+
+### Example Aggregate Output
+
+```json
+{
+  "metadata": {
+    "aggregation_type": "confidence",
+    "num_profile_runs": 5,
+    "num_successful_runs": 5,
+    "confidence_level": 0.95,
+    "run_labels": ["run_0001", "run_0002", "run_0003", "run_0004", "run_0005"]
+  },
+  "metrics": {
+    "request_throughput_avg": {
+      "mean": 255.4,
+      "std": 12.3,
+      "min": 240.1,
+      "max": 270.2,
+      "cv": 0.048,
+      "se": 5.5,
+      "ci_low": 243.2,
+      "ci_high": 267.6,
+      "t_critical": 2.776,
+      "unit": "requests/sec"
+    },
+    "ttft_p99_ms": {
+      "mean": 152.7,
+      "std": 12.4,
+      "min": 138.2,
+      "max": 168.9,
+      "cv": 0.081,
+      "se": 5.55,
+      "ci_low": 140.3,
+      "ci_high": 165.1,
+      "t_critical": 2.776,
+      "unit": "ms"
+    }
+  }
+}
+```
+
+## Interpreting Results
+
+### Coefficient of Variation (CV)
+
+The CV is a normalized measure of variability: `CV = std / mean`
+
+**Interpretation Guidelines:**
+
+- **CV < 0.05 (5%)**: Excellent repeatability, low noise
+  - Results are very stable
+  - High confidence in measurements
+  - Small differences are likely meaningful
+
+- **CV 0.05-0.10 (5-10%)**: Good repeatability, acceptable noise
+  - Results are reasonably stable
+  - Moderate confidence in measurements
+  - Medium-sized differences are likely meaningful
+
+- **CV 0.10-0.20 (10-20%)**: Fair repeatability, moderate variance
+  - Results show noticeable variation
+  - Consider running more trials
+  - Only large differences are clearly meaningful
+
+- **CV > 0.20 (>20%)**: High variability
+  - Results are unstable
+  - Investigate sources of variance
+  - Increase number of runs or use cooldown
+  - Be cautious about drawing conclusions
+
+**Example:**
+```
+ttft_p99_ms: mean=152.7ms, cv=0.081 (8.1%)
+```
+This indicates good repeatability. The p99 TTFT varies by about 8% between runs, which is acceptable for most use cases.
+
+### Confidence Intervals (CI)
+
+The confidence interval tells you: **"If we repeated this experiment many times, X% of the time the true mean would fall in this range."**
+
+**Interpretation Guidelines:**
+
+- **Narrow CI**: High precision, confident in the estimate
+  - The true mean is likely very close to the measured mean
+  - Small sample size may still be sufficient
+
+- **Wide CI**: Lower precision, more uncertainty
+  - The true mean could be anywhere in a broad range
+  - Consider increasing `--num-profile-runs`
+  - May need to investigate sources of variance
+
+**Example:**
+```
+ttft_p99_ms: mean=152.7ms, 95% CI=[140.3, 165.1]
+```
+We're 95% confident the true mean p99 TTFT is between 140.3ms and 165.1ms. The 24.8ms width suggests moderate uncertainty with 5 runs.
+
+### Comparing Configurations
+
+When comparing two configurations, consider:
+
+1. **Do the confidence intervals overlap?**
+   - No overlap → Strong evidence of a real difference
+   - Partial overlap → Likely a real difference, but less certain
+   - Complete overlap → Difference may not be meaningful
+
+2. **Is the difference larger than the CV?**
+   - If Config A has mean=100ms (CV=10%) and Config B has mean=120ms
+   - Difference is 20%, which is 2× the CV
+   - This suggests a real difference
+
+**Example:**
+```
+Config A: mean=150ms, CI=[145, 155]
+Config B: mean=180ms, CI=[175, 185]
+```
+No overlap in CIs → Strong evidence that Config B is slower.
+
+## When to Use More Runs
+
+### Recommended Number of Runs
+
+- **Quick check**: 3 runs
+  - Minimum for basic statistics
+  - Good for initial exploration
+
+- **Standard benchmarking**: 5 runs
+  - Good balance of time and precision
+  - Recommended for most use cases
+
+- **High-precision**: 10+ runs
+  - When you need very precise estimates
+  - When comparing small differences
+  - When variance is high
+
+- **Production validation**: 20+ runs
+  - For critical performance validation
+  - When making important decisions
+  - When you need very narrow confidence intervals
+
+### Signs You Need More Runs
+
+1. **High CV (>10%)**: More runs will reduce uncertainty
+2. **Wide confidence intervals**: More runs will narrow the CI
+3. **Overlapping CIs when comparing**: More runs may separate them
+4. **Inconsistent results**: More runs will clarify the true mean
+
+## Workload Consistency
+
+**Important**: All runs use the same workload (prompts, ordering, scheduling) to ensure fair comparison.
+
+AIPerf automatically:
+- Sets `--random-seed 42` if not specified (for multi-run consistency)
+- Uses the same prompts in the same order for all runs
+- Uses the same request timing patterns
+
+This ensures that observed variance is due to real system noise, not artificial differences in the workload.
+
+### Manual Seed Control
+
+You can specify your own seed:
+
+```bash
+aiperf profile \
+  --num-profile-runs 5 \
+  --random-seed 123 \
+  ...
+```
+
+All 5 runs will use seed 123, ensuring identical workloads.
+
+## Warmup Behavior
+
+When using multi-run with warmup:
+
+```bash
+aiperf profile \
+  --num-profile-runs 5 \
+  --warmup-request-count 100 \
+  ...
+```
+
+- By default, warmup runs **once** before the first profile run only
+- Subsequent profile runs (2-5) measure steady-state performance without warmup
+- Warmup metrics are automatically excluded from results
+- Use `--profile-run-disable-warmup-after-first false` to run warmup before each run (useful for long cooldown periods)
+
+This default behavior is more efficient and provides more accurate aggregate statistics by measuring steady-state performance.
+
+## Troubleshooting
+
+### High Variance (CV > 20%)
+
+**Possible causes:**
+- System is under load from other processes
+- Network instability
+- Server batching/scheduling dynamics
+- Insufficient warmup
+
+**Solutions:**
+1. Use `--profile-run-cooldown-seconds` to reduce correlation
+2. Increase `--warmup-request-count` to stabilize server
+3. Run benchmarks during low-load periods
+4. Investigate server configuration
+5. Increase `--num-profile-runs` to better characterize variance
+
+### Failed Runs
+
+If some runs fail, AIPerf will:
+- Continue with remaining runs
+- Compute statistics over successful runs only
+- Report failed runs in aggregate metadata
+
+**Example output:**
+```json
+{
+  "metadata": {
+    "num_profile_runs": 5,
+    "num_successful_runs": 4,
+    "failed_runs": [
+      {"label": "run_0003", "error": "Connection timeout"}
+    ]
+  }
+}
+```
+
+### Insufficient Successful Runs
+
+If fewer than 2 runs succeed, you'll get an error:
+```
+ValueError: Insufficient successful runs for confidence intervals.
+Got 1 successful run(s), but need at least 2.
+Consider increasing --num-profile-runs or investigating why runs are failing.
+```
+
+**Solution**: Increase `--num-profile-runs` or fix the underlying issue causing failures.
+
+### Very Long Benchmark Times
+
+If `--num-profile-runs` is large and each run takes a long time:
+
+1. **Reduce run duration**:
+   - Use fewer prompts: `--num-prompts 500` instead of `--num-prompts 5000`
+   - Use shorter prompts: `--synthetic-input-tokens-mean 100`
+
+2. **Use cooldown strategically**:
+   - Only add cooldown if you see high correlation between runs
+   - Start without cooldown and add if needed
+
+3. **Run overnight**:
+   - For production validation with many runs
+
+## Best Practices
+
+### 1. Start with 5 Runs
+
+This provides a good balance of precision and time investment.
+
+### 2. Check CV First
+
+After running, look at the CV for your key metrics:
+- CV < 10%: Results are trustworthy
+- CV > 10%: Consider more runs or investigate variance
+
+### 3. Use Warmup
+
+Always use warmup to eliminate cold-start effects:
+```bash
+--warmup-request-count 100
+```
+
+### 4. Set Random Seed for Reproducibility
+
+For reproducible experiments:
+```bash
+--random-seed 42
+```
+
+### 5. Document Your Configuration
+
+Save your command and results for future reference:
+```bash
+aiperf profile ... | tee benchmark_log.txt
+```
+
+### 6. Compare Apples to Apples
+
+When comparing configurations:
+- Use the same `--num-profile-runs`
+- Use the same `--random-seed`
+- Use the same workload parameters
+
+## Advanced Usage
+
+### Combining with Other Features
+
+Multi-run works with all AIPerf features:
+
+**With GPU telemetry:**
+```bash
+aiperf profile \
+  --num-profile-runs 5 \
+  --gpu-telemetry-url http://localhost:9400/metrics \
+  ...
+```
+
+**With server metrics:**
+```bash
+aiperf profile \
+  --num-profile-runs 5 \
+  --server-metrics-url http://localhost:8000/metrics \
+  ...
+```
+
+**With trace replay:**
+```bash
+aiperf profile \
+  --num-profile-runs 5 \
+  --trace-file my_trace.jsonl \
+  ...
+```
+
+### Analyzing Results Programmatically
+
+Load aggregate results in Python:
+
+```python
+import json
+
+with open('artifacts/aggregate/profile_export_aiperf_aggregate.json') as f:
+    agg = json.load(f)
+
+# Get throughput statistics
+throughput = agg['metrics']['request_throughput_avg']
+print(f"Mean: {throughput['mean']:.2f} req/s")
+print(f"CV: {throughput['cv']:.1%}")
+print(f"95% CI: [{throughput['ci_low']:.2f}, {throughput['ci_high']:.2f}]")
+```
+
+## Summary
+
+Multi-run confidence reporting helps you:
+- ✅ Quantify measurement variance
+- ✅ Assess repeatability with CV
+- ✅ Compute confidence intervals
+- ✅ Make statistically informed decisions
+- ✅ Debug outliers with per-run artifacts
+
+**Quick Start:**
+```bash
+aiperf profile --num-profile-runs 5 [other options]
+```
+
+**Key Metrics:**
+- **CV < 10%**: Good repeatability
+- **Narrow CI**: High precision
+- **No CI overlap**: Strong evidence of difference
+
+For more details, see:
+- [CLI Options](../cli_options.md) - Full parameter reference
+- [Metrics Reference](../metrics_reference.md) - Detailed metric descriptions
+- [Architecture](../architecture.md) - How multi-run orchestration works

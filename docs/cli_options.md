@@ -723,6 +723,30 @@ Duration in seconds to ramp request rate from a proportional minimum to target. 
 Duration in seconds to ramp warmup request rate from a proportional minimum to target. Start rate is calculated as target * (update_interval / duration). If not set, uses `--request-rate-ramp-duration` value.
 <br>_Constraints: > 0_
 
+#### `--num-profile-runs` `<int>`
+
+Number of profile runs to execute for confidence reporting. Must be between 1 and 10. When set to 1 (default), runs a single benchmark. When set to >1, runs multiple benchmarks and computes aggregate statistics (mean, std, confidence intervals, coefficient of variation) across runs. Useful for quantifying variance and establishing confidence in results.
+<br>_Constraints: ≥ 1, ≤ 10_
+<br>_Default: `1`_
+
+#### `--profile-run-cooldown-seconds` `<float>`
+
+Cooldown duration in seconds between profile runs. Only applies when --num-profile-runs > 1. Allows the system to stabilize between runs (e.g., clear caches, cool down GPUs). Default is 0 (no cooldown).
+<br>_Constraints: ≥ 0_
+<br>_Default: `0.0`_
+
+#### `--confidence-level` `<float>`
+
+Confidence level for computing confidence intervals (0-1). Only applies when --num-profile-runs > 1. Common values: 0.90 (90%%), 0.95 (95%%, default), 0.99 (99%%). Higher values produce wider confidence intervals.
+<br>_Constraints: > 0, < 1_
+<br>_Default: `0.95`_
+
+#### `--profile-run-disable-warmup-after-first`
+
+Disable warmup for profile runs after the first. Only applies when --num-profile-runs > 1. When True (default), only the first run includes warmup, subsequent runs measure steady-state performance for more accurate aggregate statistics. When False, all runs include warmup (useful for long cooldown periods or when testing cold-start performance).
+<br>_Flag (no value required)_
+<br>_Default: `True`_
+
 ### Telemetry
 
 #### `--gpu-telemetry` `<list>`

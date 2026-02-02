@@ -378,3 +378,98 @@ class LoadGeneratorConfig(BaseConfig):
             group=_CLI_GROUP,
         ),
     ] = None
+
+    num_profile_runs: Annotated[
+        int,
+        Field(
+            ge=1,
+            le=10,
+            description="Number of profile runs to execute for confidence reporting. "
+            "Must be between 1 and 10. "
+            "When set to 1 (default), runs a single benchmark. "
+            "When set to >1, runs multiple benchmarks and computes aggregate statistics "
+            "(mean, std, confidence intervals, coefficient of variation) across runs. "
+            "Useful for quantifying variance and establishing confidence in results.",
+        ),
+        CLIParameter(
+            name=("--num-profile-runs",),
+            group=_CLI_GROUP,
+        ),
+    ] = 1
+
+    profile_run_cooldown_seconds: Annotated[
+        float,
+        Field(
+            ge=0,
+            description="Cooldown duration in seconds between profile runs. "
+            "Only applies when --num-profile-runs > 1. "
+            "Allows the system to stabilize between runs (e.g., clear caches, cool down GPUs). "
+            "Default is 0 (no cooldown).",
+        ),
+        CLIParameter(
+            name=("--profile-run-cooldown-seconds",),
+            group=_CLI_GROUP,
+        ),
+    ] = 0.0
+
+    confidence_level: Annotated[
+        float,
+        Field(
+            gt=0,
+            lt=1,
+            description="Confidence level for computing confidence intervals (0-1). "
+            "Only applies when --num-profile-runs > 1. "
+            "Common values: 0.90 (90%%), 0.95 (95%%, default), 0.99 (99%%). "
+            "Higher values produce wider confidence intervals.",
+        ),
+        CLIParameter(
+            name=("--confidence-level",),
+            group=_CLI_GROUP,
+        ),
+    ] = 0.95
+
+    profile_run_disable_warmup_after_first: Annotated[
+        bool,
+        Field(
+            description="Disable warmup for profile runs after the first. "
+            "Only applies when --num-profile-runs > 1. "
+            "When True (default), only the first run includes warmup, subsequent runs "
+            "measure steady-state performance for more accurate aggregate statistics. "
+            "When False, all runs include warmup (useful for long cooldown periods "
+            "or when testing cold-start performance).",
+        ),
+        CLIParameter(
+            name=("--profile-run-disable-warmup-after-first",),
+            group=_CLI_GROUP,
+        ),
+    ] = True
+
+    def disable_warmup(self) -> None:
+        """Disable all warmup-related parameters.
+
+        This method explicitly sets all warmup fields to None, ensuring
+        that no warmup phase runs. This is the authoritative list of
+        warmup fields - if a new warmup field is added, it MUST be
+        added to this method.
+
+        This design makes it explicit which fields are warmup-related
+        and ensures the list is maintained in one place (the config class).
+        """
+        # Core warmup parameters
+        self.warmup_request_count = None
+        self.warmup_duration = None
+        self.warmup_num_sessions = None
+
+        # Warmup load parameters
+        self.warmup_concurrency = None
+        self.warmup_prefill_concurrency = None
+        self.warmup_request_rate = None
+        self.warmup_arrival_pattern = None
+
+        # Warmup timing parameters
+        self.warmup_grace_period = None
+
+        # Warmup ramp parameters
+        self.warmup_concurrency_ramp_duration = None
+        self.warmup_prefill_concurrency_ramp_duration = None
+        self.warmup_request_rate_ramp_duration = None

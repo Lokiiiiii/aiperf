@@ -4,9 +4,7 @@
 
 import copy
 import json
-import subprocess
-from pathlib import Path
-from unittest.mock import MagicMock, Mock, patch, call
+from unittest.mock import Mock, patch
 
 import pytest
 
@@ -22,12 +20,19 @@ class TestMultiRunOrchestrator:
     @pytest.fixture
     def mock_service_config(self):
         """Create a mock service config."""
-        return Mock(spec=ServiceConfig)
+        mock_config = Mock(spec=ServiceConfig)
+        # Make model_dump return a serializable dict
+        mock_config.model_dump.return_value = {
+            "workers_max": 4,
+            "workers_min": 1,
+        }
+        return mock_config
 
     @pytest.fixture
     def mock_user_config(self):
         """Create a mock user config."""
-        from aiperf.common.config import EndpointConfig, UserConfig
+        from aiperf.common.config import EndpointConfig
+
         config = UserConfig(endpoint=EndpointConfig(model_names=["test-model"]))
         config.loadgen.warmup_request_count = 10
         config.loadgen.warmup_num_sessions = None
@@ -42,9 +47,7 @@ class TestMultiRunOrchestrator:
         self, mock_service_config, mock_user_config, tmp_path
     ):
         """Test execute with FixedTrialsStrategy."""
-        orchestrator = MultiRunOrchestrator(
-            tmp_path, mock_service_config
-        )
+        orchestrator = MultiRunOrchestrator(tmp_path, mock_service_config)
 
         strategy = FixedTrialsStrategy(num_trials=3, cooldown_seconds=0.0)
 
@@ -86,9 +89,7 @@ class TestMultiRunOrchestrator:
         self, mock_service_config, mock_user_config, tmp_path
     ):
         """Test that execute handles run failures gracefully."""
-        orchestrator = MultiRunOrchestrator(
-            tmp_path, mock_service_config
-        )
+        orchestrator = MultiRunOrchestrator(tmp_path, mock_service_config)
 
         strategy = FixedTrialsStrategy(num_trials=3, cooldown_seconds=0.0)
 
@@ -130,9 +131,7 @@ class TestMultiRunOrchestrator:
         self, mock_service_config, mock_user_config, tmp_path
     ):
         """Test that cooldown is applied between runs."""
-        orchestrator = MultiRunOrchestrator(
-            tmp_path, mock_service_config
-        )
+        orchestrator = MultiRunOrchestrator(tmp_path, mock_service_config)
 
         strategy = FixedTrialsStrategy(num_trials=2, cooldown_seconds=0.5)
 
@@ -151,9 +150,11 @@ class TestMultiRunOrchestrator:
             ),
         ]
 
-        with patch.object(orchestrator, "_execute_single_run", side_effect=mock_results):
-            with patch("aiperf.orchestrator.orchestrator.time.sleep") as mock_sleep:
-                results = orchestrator.execute(mock_user_config, strategy)
+        with (
+            patch.object(orchestrator, "_execute_single_run", side_effect=mock_results),
+            patch("aiperf.orchestrator.orchestrator.time.sleep") as mock_sleep,
+        ):
+            results = orchestrator.execute(mock_user_config, strategy)
 
         # Verify cooldown was called once (between run 1 and run 2)
         mock_sleep.assert_called_once_with(0.5)
@@ -163,9 +164,7 @@ class TestMultiRunOrchestrator:
         self, mock_service_config, mock_user_config, tmp_path
     ):
         """Test that cooldown is NOT applied after the last run."""
-        orchestrator = MultiRunOrchestrator(
-            tmp_path, mock_service_config
-        )
+        orchestrator = MultiRunOrchestrator(tmp_path, mock_service_config)
 
         strategy = FixedTrialsStrategy(num_trials=1, cooldown_seconds=1.0)
 
@@ -178,9 +177,11 @@ class TestMultiRunOrchestrator:
             ),
         ]
 
-        with patch.object(orchestrator, "_execute_single_run", side_effect=mock_results):
-            with patch("aiperf.orchestrator.orchestrator.time.sleep") as mock_sleep:
-                results = orchestrator.execute(mock_user_config, strategy)
+        with (
+            patch.object(orchestrator, "_execute_single_run", side_effect=mock_results),
+            patch("aiperf.orchestrator.orchestrator.time.sleep") as mock_sleep,
+        ):
+            results = orchestrator.execute(mock_user_config, strategy)
 
         # Verify cooldown was NOT called (only 1 run)
         mock_sleep.assert_not_called()
@@ -190,9 +191,7 @@ class TestMultiRunOrchestrator:
         self, mock_service_config, mock_user_config, tmp_path
     ):
         """Test _execute_single_run with successful subprocess execution."""
-        orchestrator = MultiRunOrchestrator(
-            tmp_path, mock_service_config
-        )
+        orchestrator = MultiRunOrchestrator(tmp_path, mock_service_config)
 
         strategy = FixedTrialsStrategy(num_trials=1)
 
@@ -222,7 +221,7 @@ class TestMultiRunOrchestrator:
         mock_result.stdout = "Success"
         mock_result.stderr = ""
 
-        with patch("aiperf.orchestrator.orchestrator.subprocess.run", return_value=mock_result):
+        with patch("subprocess.run", return_value=mock_result):
             result = orchestrator._execute_single_run(mock_user_config, strategy, 0)
 
         assert result.success is True
@@ -234,9 +233,7 @@ class TestMultiRunOrchestrator:
         self, mock_service_config, mock_user_config, tmp_path
     ):
         """Test _execute_single_run when subprocess fails."""
-        orchestrator = MultiRunOrchestrator(
-            tmp_path, mock_service_config
-        )
+        orchestrator = MultiRunOrchestrator(tmp_path, mock_service_config)
 
         strategy = FixedTrialsStrategy(num_trials=1)
 
@@ -246,7 +243,7 @@ class TestMultiRunOrchestrator:
         mock_result.stdout = ""
         mock_result.stderr = "Error: Connection refused"
 
-        with patch("aiperf.orchestrator.orchestrator.subprocess.run", return_value=mock_result):
+        with patch("subprocess.run", return_value=mock_result):
             result = orchestrator._execute_single_run(mock_user_config, strategy, 0)
 
         assert result.success is False
@@ -258,9 +255,7 @@ class TestMultiRunOrchestrator:
         self, mock_service_config, mock_user_config, tmp_path
     ):
         """Test _execute_single_run when no metrics are found."""
-        orchestrator = MultiRunOrchestrator(
-            tmp_path, mock_service_config
-        )
+        orchestrator = MultiRunOrchestrator(tmp_path, mock_service_config)
 
         strategy = FixedTrialsStrategy(num_trials=1)
 
@@ -270,7 +265,7 @@ class TestMultiRunOrchestrator:
         mock_result.stdout = "Success"
         mock_result.stderr = ""
 
-        with patch("aiperf.orchestrator.orchestrator.subprocess.run", return_value=mock_result):
+        with patch("subprocess.run", return_value=mock_result):
             result = orchestrator._execute_single_run(mock_user_config, strategy, 0)
 
         assert result.success is False
@@ -280,9 +275,7 @@ class TestMultiRunOrchestrator:
         self, mock_service_config, mock_user_config, tmp_path
     ):
         """Test _execute_single_run when request_count is zero."""
-        orchestrator = MultiRunOrchestrator(
-            tmp_path, mock_service_config
-        )
+        orchestrator = MultiRunOrchestrator(tmp_path, mock_service_config)
 
         strategy = FixedTrialsStrategy(num_trials=1)
 
@@ -306,7 +299,7 @@ class TestMultiRunOrchestrator:
         mock_result.stdout = "Success"
         mock_result.stderr = ""
 
-        with patch("aiperf.orchestrator.orchestrator.subprocess.run", return_value=mock_result):
+        with patch("subprocess.run", return_value=mock_result):
             result = orchestrator._execute_single_run(mock_user_config, strategy, 0)
 
         assert result.success is False
@@ -316,14 +309,12 @@ class TestMultiRunOrchestrator:
         self, mock_service_config, mock_user_config, tmp_path
     ):
         """Test _execute_single_run when an exception occurs."""
-        orchestrator = MultiRunOrchestrator(
-            tmp_path, mock_service_config
-        )
+        orchestrator = MultiRunOrchestrator(tmp_path, mock_service_config)
 
         strategy = FixedTrialsStrategy(num_trials=1)
 
         # Mock subprocess.run to raise an exception
-        with patch("aiperf.orchestrator.orchestrator.subprocess.run", side_effect=Exception("Unexpected error")):
+        with patch("subprocess.run", side_effect=Exception("Unexpected error")):
             result = orchestrator._execute_single_run(mock_user_config, strategy, 0)
 
         assert result.success is False
@@ -333,9 +324,7 @@ class TestMultiRunOrchestrator:
         self, mock_service_config, mock_user_config, tmp_path
     ):
         """Test that _execute_single_run creates run_config.json."""
-        orchestrator = MultiRunOrchestrator(
-            tmp_path, mock_service_config
-        )
+        orchestrator = MultiRunOrchestrator(tmp_path, mock_service_config)
 
         strategy = FixedTrialsStrategy(num_trials=1)
 
@@ -360,7 +349,7 @@ class TestMultiRunOrchestrator:
         mock_result.stdout = "Success"
         mock_result.stderr = ""
 
-        with patch("aiperf.orchestrator.orchestrator.subprocess.run", return_value=mock_result):
+        with patch("subprocess.run", return_value=mock_result):
             orchestrator._execute_single_run(mock_user_config, strategy, 0)
 
         # Verify run_config.json was created
@@ -373,13 +362,9 @@ class TestMultiRunOrchestrator:
             assert "user_config" in config_data
             assert "service_config" in config_data
 
-    def test_extract_summary_metrics(
-        self, mock_service_config, tmp_path
-    ):
+    def test_extract_summary_metrics(self, mock_service_config, tmp_path):
         """Test extracting summary metrics from JSON file."""
-        orchestrator = MultiRunOrchestrator(
-            tmp_path, mock_service_config
-        )
+        orchestrator = MultiRunOrchestrator(tmp_path, mock_service_config)
 
         # Create a mock profile_export_aiperf.json file with the correct structure
         artifacts_path = tmp_path / "run_0001"
@@ -416,13 +401,9 @@ class TestMultiRunOrchestrator:
         assert "request_throughput_avg" in metrics
         assert metrics["request_throughput_avg"] == 25.4
 
-    def test_extract_summary_metrics_missing_file(
-        self, mock_service_config, tmp_path
-    ):
+    def test_extract_summary_metrics_missing_file(self, mock_service_config, tmp_path):
         """Test extracting metrics when file doesn't exist."""
-        orchestrator = MultiRunOrchestrator(
-            tmp_path, mock_service_config
-        )
+        orchestrator = MultiRunOrchestrator(tmp_path, mock_service_config)
 
         artifacts_path = tmp_path / "run_0001"
         artifacts_path.mkdir(parents=True)
@@ -433,13 +414,9 @@ class TestMultiRunOrchestrator:
         # Should return empty dict
         assert metrics == {}
 
-    def test_extract_summary_metrics_invalid_json(
-        self, mock_service_config, tmp_path
-    ):
+    def test_extract_summary_metrics_invalid_json(self, mock_service_config, tmp_path):
         """Test extracting metrics when JSON is invalid."""
-        orchestrator = MultiRunOrchestrator(
-            tmp_path, mock_service_config
-        )
+        orchestrator = MultiRunOrchestrator(tmp_path, mock_service_config)
 
         artifacts_path = tmp_path / "run_0001"
         artifacts_path.mkdir(parents=True)
@@ -458,9 +435,7 @@ class TestMultiRunOrchestrator:
         self, mock_service_config, tmp_path
     ):
         """Test that non-numeric fields are skipped."""
-        orchestrator = MultiRunOrchestrator(
-            tmp_path, mock_service_config
-        )
+        orchestrator = MultiRunOrchestrator(tmp_path, mock_service_config)
 
         artifacts_path = tmp_path / "run_0001"
         artifacts_path.mkdir(parents=True)
@@ -487,9 +462,7 @@ class TestMultiRunOrchestrator:
         self, mock_service_config, mock_user_config, tmp_path
     ):
         """Test that warmup is disabled after the first run."""
-        orchestrator = MultiRunOrchestrator(
-            tmp_path, mock_service_config
-        )
+        orchestrator = MultiRunOrchestrator(tmp_path, mock_service_config)
 
         strategy = FixedTrialsStrategy(num_trials=2, cooldown_seconds=0.0)
 
@@ -505,9 +478,14 @@ class TestMultiRunOrchestrator:
                 artifacts_path=tmp_path / strategy.get_run_label(run_index),
             )
 
-        with patch.object(orchestrator, "_execute_single_run", side_effect=mock_execute):
-            with patch("aiperf.orchestrator.orchestrator.copy.deepcopy", side_effect=copy.deepcopy):
-                orchestrator.execute(mock_user_config, strategy)
+        with (
+            patch.object(orchestrator, "_execute_single_run", side_effect=mock_execute),
+            patch(
+                "aiperf.orchestrator.orchestrator.copy.deepcopy",
+                side_effect=copy.deepcopy,
+            ),
+        ):
+            orchestrator.execute(mock_user_config, strategy)
 
         # Verify first run has warmup, second run doesn't
         assert len(configs_used) == 2
@@ -520,9 +498,7 @@ class TestMultiRunOrchestrator:
         self, mock_service_config, mock_user_config, tmp_path
     ):
         """Test that strategy.validate_config is called before execution."""
-        orchestrator = MultiRunOrchestrator(
-            tmp_path, mock_service_config
-        )
+        orchestrator = MultiRunOrchestrator(tmp_path, mock_service_config)
 
         strategy = FixedTrialsStrategy(num_trials=1, cooldown_seconds=0.0)
 
@@ -535,9 +511,11 @@ class TestMultiRunOrchestrator:
             ),
         ]
 
-        with patch.object(orchestrator, "_execute_single_run", side_effect=mock_results):
-            with patch.object(strategy, "validate_config") as mock_validate:
-                orchestrator.execute(mock_user_config, strategy)
+        with (
+            patch.object(orchestrator, "_execute_single_run", side_effect=mock_results),
+            patch.object(strategy, "validate_config") as mock_validate,
+        ):
+            orchestrator.execute(mock_user_config, strategy)
 
         # Verify validate_config was called
         mock_validate.assert_called_once_with(mock_user_config)

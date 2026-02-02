@@ -64,12 +64,12 @@ class MultiRunOrchestrator:
         logger.info(
             f"Starting multi-run benchmark with strategy: {strategy.__class__.__name__}"
         )
-        
+
         # Let strategy validate config before starting
         strategy.validate_config(base_config)
 
         should_continue = strategy.should_continue(results)
-        
+
         while should_continue:
             # Strategy decides next config (including warmup handling)
             config = strategy.get_next_config(base_config, results)
@@ -92,7 +92,7 @@ class MultiRunOrchestrator:
 
             # Check if there will be another run (single call to should_continue)
             should_continue = strategy.should_continue(results)
-            
+
             # Apply cooldown only if there's another run coming
             if should_continue:
                 cooldown = strategy.get_cooldown_seconds()
@@ -101,13 +101,13 @@ class MultiRunOrchestrator:
                     time.sleep(cooldown)
 
         successful = sum(1 for r in results if r.success)
-        logger.info(
-            f"All runs complete: {successful}/{len(results)} successful"
-        )
+        logger.info(f"All runs complete: {successful}/{len(results)} successful")
 
         return results
 
-    def _execute_single_run(self, config: UserConfig, strategy: ExecutionStrategy, run_index: int) -> RunResult:
+    def _execute_single_run(
+        self, config: UserConfig, strategy: ExecutionStrategy, run_index: int
+    ) -> RunResult:
         """Execute a single benchmark run in a subprocess.
 
         Each run is executed in a separate subprocess to ensure complete isolation.
@@ -121,16 +121,16 @@ class MultiRunOrchestrator:
         Returns:
             RunResult with success status and metrics or error
         """
+        import json
         import subprocess
         import sys
-        import json
-        
+
         try:
             # Strategy determines artifact path and label
             artifacts_path = strategy.get_run_path(self.base_dir, run_index)
             artifacts_path.mkdir(parents=True, exist_ok=True)
             label = strategy.get_run_label(run_index)
-            
+
             config = copy.deepcopy(config)
             config.output.artifact_directory = artifacts_path
 
@@ -138,25 +138,34 @@ class MultiRunOrchestrator:
             # Use exclude_defaults=True to avoid serializing fields that weren't explicitly set
             # This prevents validation errors on deserialization for fields with conditional validators
             config_data = {
-                "user_config": config.model_dump(mode="json", exclude_defaults=True, exclude_none=True),
-                "service_config": self.service_config.model_dump(mode="json", exclude_defaults=True, exclude_none=True),
+                "user_config": config.model_dump(
+                    mode="json", exclude_defaults=True, exclude_none=True
+                ),
+                "service_config": self.service_config.model_dump(
+                    mode="json", exclude_defaults=True, exclude_none=True
+                ),
             }
-            
+
             # Write config to artifact directory for debugging and reproducibility
             # This allows users to see exactly what config was used for each run
             config_file = artifacts_path / "run_config.json"
-            with open(config_file, 'w', encoding='utf-8') as f:
+            with open(config_file, "w", encoding="utf-8") as f:
                 json.dump(config_data, f, indent=2)
-            
+
             # Run the benchmark in a subprocess using the dedicated runner module
             # The runner loads the config and calls _run_single_benchmark()
             # No timeout is set - SystemController handles benchmark duration and grace period internally
             result = subprocess.run(
-                [sys.executable, '-m', 'aiperf.orchestrator._subprocess_runner', str(config_file)],
+                [
+                    sys.executable,
+                    "-m",
+                    "aiperf.orchestrator._subprocess_runner",
+                    str(config_file),
+                ],
                 capture_output=True,
                 text=True,
             )
-            
+
             if result.returncode != 0:
                 error_msg = f"Benchmark failed with exit code {result.returncode}"
                 if result.stderr:
@@ -173,11 +182,13 @@ class MultiRunOrchestrator:
             # Extract summary metrics from the artifacts
             # The SystemController writes results to files, so we read them back
             summary_metrics = self._extract_summary_metrics(artifacts_path)
-            
+
             # Check if the run produced any meaningful results
             # If no metrics were extracted or request_count is 0, treat as failure
             if not summary_metrics:
-                error_msg = "No metrics found in artifacts - run may have failed to complete"
+                error_msg = (
+                    "No metrics found in artifacts - run may have failed to complete"
+                )
                 logger.error(error_msg)
                 return RunResult(
                     label=label,
@@ -185,7 +196,7 @@ class MultiRunOrchestrator:
                     error=error_msg,
                     artifacts_path=artifacts_path,
                 )
-            
+
             # Check if any requests completed successfully
             request_count = summary_metrics.get("request_count_avg", 0)
             if request_count == 0:
@@ -229,7 +240,7 @@ class MultiRunOrchestrator:
         Returns:
             Dict mapping metric name to value (e.g., {"time_to_first_token_p99": 152.7})
         """
-        from aiperf.common.models.export_models import JsonExportData, JsonMetricResult
+        from aiperf.common.models.export_models import JsonExportData
 
         # Read the profile export JSON file
         json_file = artifacts_path / "profile_export_aiperf.json"
@@ -248,9 +259,11 @@ class MultiRunOrchestrator:
             # JsonExportData uses extra="allow", so it can have additional metrics
             # beyond what's explicitly defined in the model
             metrics = {}
-            
+
             # Get all fields from the Pydantic model
-            for field_name, field_value in export_data.model_dump(exclude_none=True).items():
+            for field_name, field_value in export_data.model_dump(
+                exclude_none=True
+            ).items():
                 # Check if this field is a JsonMetricResult (has the metric structure)
                 if isinstance(field_value, dict) and "unit" in field_value:
                     # This is a metric - extract all statistical values
@@ -259,7 +272,14 @@ class MultiRunOrchestrator:
                         if stat_key != "unit" and stat_value is not None:
                             # Create metric name like "time_to_first_token_p99"
                             full_metric_name = f"{field_name}_{stat_key}"
-                            metrics[full_metric_name] = float(stat_value)
+                            try:
+                                metrics[full_metric_name] = float(stat_value)
+                            except (ValueError, TypeError):
+                                # Skip non-numeric values (e.g., strings, objects)
+                                logger.debug(
+                                    f"Skipping non-numeric field {full_metric_name}: {stat_value}"
+                                )
+                                continue
 
             return metrics
 

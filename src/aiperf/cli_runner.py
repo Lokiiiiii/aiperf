@@ -136,21 +136,11 @@ def _run_multi_benchmark(
         AggregateConfidenceJsonExporter,
         AggregateExporterConfig,
     )
-    from aiperf.module_loader import ensure_modules_loaded
     from aiperf.orchestrator.aggregation.confidence import ConfidenceAggregation
     from aiperf.orchestrator.orchestrator import MultiRunOrchestrator
     from aiperf.orchestrator.strategies import FixedTrialsStrategy
 
     logger = AIPerfLogger(__name__)
-
-    # Ensure modules are loaded
-    try:
-        ensure_modules_loaded()
-    except Exception as e:
-        raise_startup_error_and_exit(
-            f"Error loading modules: {e}",
-            title="Error Loading Modules",
-        )
 
     # Print multi-run banner
     num_runs = user_config.loadgen.num_profile_runs

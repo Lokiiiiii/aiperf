@@ -294,6 +294,7 @@ async def aiperf_runner(
         # Capture stdout/stderr for validation error tests
         # Use PIPE to capture output while still allowing it to be displayed
         import subprocess
+
         process = await asyncio.create_subprocess_exec(
             *cmd,
             stdout=subprocess.PIPE,

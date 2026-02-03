@@ -11,17 +11,17 @@ from aiperf.orchestrator.aggregation.base import AggregateResult
 @dataclass(slots=True)
 class AggregateExporterConfig:
     """Configuration for aggregate exporters.
-    
+
     Simpler than ExporterConfig because aggregate exports don't need:
     - ProfileResults (single-run data)
     - TelemetryExportData (per-run telemetry)
     - ServerMetricsResults (per-run server metrics)
     - Full UserConfig (just need output directory)
-    
+
     Attributes:
         result: AggregateResult to export
         output_dir: Directory where export file will be written
     """
-    
+
     result: AggregateResult
     output_dir: Path

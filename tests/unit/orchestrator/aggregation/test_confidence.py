@@ -26,44 +26,44 @@ class TestConfidenceAggregation:
     def test_aggregate_with_known_values(self, tmp_path):
         """Test aggregation with known values."""
         strategy = ConfidenceAggregation(confidence_level=0.95)
-        
+
         # Create results with known values
         results = [
             RunResult(
                 label="run_0001",
                 success=True,
                 summary_metrics={"ttft_avg": 100.0, "tpot_avg": 10.0},
-                artifacts_path=tmp_path / "run_0001"
+                artifacts_path=tmp_path / "run_0001",
             ),
             RunResult(
                 label="run_0002",
                 success=True,
                 summary_metrics={"ttft_avg": 110.0, "tpot_avg": 12.0},
-                artifacts_path=tmp_path / "run_0002"
+                artifacts_path=tmp_path / "run_0002",
             ),
             RunResult(
                 label="run_0003",
                 success=True,
                 summary_metrics={"ttft_avg": 105.0, "tpot_avg": 11.0},
-                artifacts_path=tmp_path / "run_0003"
+                artifacts_path=tmp_path / "run_0003",
             ),
         ]
-        
+
         aggregate = strategy.aggregate(results)
-        
+
         # Verify basic structure
         assert aggregate.aggregation_type == "confidence"
         assert aggregate.num_runs == 3
         assert aggregate.num_successful_runs == 3
         assert len(aggregate.failed_runs) == 0
-        
+
         # Verify ttft_avg metrics
         ttft_metric = aggregate.metrics["ttft_avg"]
         assert ttft_metric.mean == pytest.approx(105.0)
         assert ttft_metric.std == pytest.approx(5.0)
         assert ttft_metric.min == 100.0
         assert ttft_metric.max == 110.0
-        
+
         # Verify tpot_avg metrics
         tpot_metric = aggregate.metrics["tpot_avg"]
         assert tpot_metric.mean == pytest.approx(11.0)
@@ -72,37 +72,37 @@ class TestConfidenceAggregation:
     def test_aggregate_with_failed_runs(self):
         """Test aggregation excludes failed runs."""
         strategy = ConfidenceAggregation()
-        
+
         results = [
             RunResult(
                 label="run_0001",
                 success=True,
                 summary_metrics={"ttft_avg": 100.0},
-                artifacts_path=Path("/tmp/run_0001")
+                artifacts_path=Path("/tmp/run_0001"),
             ),
             RunResult(
                 label="run_0002",
                 success=False,
                 error="Connection timeout",
-                artifacts_path=Path("/tmp/run_0002")
+                artifacts_path=Path("/tmp/run_0002"),
             ),
             RunResult(
                 label="run_0003",
                 success=True,
                 summary_metrics={"ttft_avg": 110.0},
-                artifacts_path=Path("/tmp/run_0003")
+                artifacts_path=Path("/tmp/run_0003"),
             ),
         ]
-        
+
         aggregate = strategy.aggregate(results)
-        
+
         # Verify counts
         assert aggregate.num_runs == 3
         assert aggregate.num_successful_runs == 2
         assert len(aggregate.failed_runs) == 1
         assert aggregate.failed_runs[0]["label"] == "run_0002"
         assert aggregate.failed_runs[0]["error"] == "Connection timeout"
-        
+
         # Verify metrics computed from successful runs only
         ttft_metric = aggregate.metrics["ttft_avg"]
         assert ttft_metric.mean == pytest.approx(105.0)
@@ -110,39 +110,39 @@ class TestConfidenceAggregation:
     def test_aggregate_error_with_insufficient_runs(self):
         """Test aggregation raises error with < 2 successful runs."""
         strategy = ConfidenceAggregation()
-        
+
         # Only one successful run
         results = [
             RunResult(
                 label="run_0001",
                 success=True,
                 summary_metrics={"ttft_avg": 100.0},
-                artifacts_path=Path("/tmp/run_0001")
+                artifacts_path=Path("/tmp/run_0001"),
             ),
         ]
-        
+
         with pytest.raises(ValueError, match="Insufficient successful runs"):
             strategy.aggregate(results)
 
     def test_aggregate_error_with_all_failed_runs(self):
         """Test aggregation raises error when all runs failed."""
         strategy = ConfidenceAggregation()
-        
+
         results = [
             RunResult(
                 label="run_0001",
                 success=False,
                 error="Error 1",
-                artifacts_path=Path("/tmp/run_0001")
+                artifacts_path=Path("/tmp/run_0001"),
             ),
             RunResult(
                 label="run_0002",
                 success=False,
                 error="Error 2",
-                artifacts_path=Path("/tmp/run_0002")
+                artifacts_path=Path("/tmp/run_0002"),
             ),
         ]
-        
+
         with pytest.raises(ValueError, match="All runs failed"):
             strategy.aggregate(results)
 
@@ -155,22 +155,22 @@ class TestConfidenceAggregation:
                 label=f"run_{i:04d}",
                 success=True,
                 summary_metrics={"metric": float(i)},
-                artifacts_path=Path(f"/tmp/run_{i:04d}")
+                artifacts_path=Path(f"/tmp/run_{i:04d}"),
             )
             for i in range(1, 4)
         ]
-        
+
         aggregate = strategy.aggregate(results)
         metric = aggregate.metrics["metric"]
-        
+
         # Compute expected t-critical
         n = 3
         df = n - 1
         alpha = 1 - 0.95
         expected_t_critical = stats.t.ppf(1 - alpha / 2, df)
-        
+
         assert metric.t_critical == pytest.approx(expected_t_critical)
-        
+
         # Test with N=10, confidence=0.99
         strategy = ConfidenceAggregation(confidence_level=0.99)
         results = [
@@ -178,50 +178,50 @@ class TestConfidenceAggregation:
                 label=f"run_{i:04d}",
                 success=True,
                 summary_metrics={"metric": float(i)},
-                artifacts_path=Path(f"/tmp/run_{i:04d}")
+                artifacts_path=Path(f"/tmp/run_{i:04d}"),
             )
             for i in range(1, 11)
         ]
-        
+
         aggregate = strategy.aggregate(results)
         metric = aggregate.metrics["metric"]
-        
+
         n = 10
         df = n - 1
         alpha = 1 - 0.99
         expected_t_critical = stats.t.ppf(1 - alpha / 2, df)
-        
+
         assert metric.t_critical == pytest.approx(expected_t_critical)
 
     def test_cv_computation(self):
         """Test coefficient of variation computation."""
         strategy = ConfidenceAggregation()
-        
+
         # Test with known values
         results = [
             RunResult(
                 label="run_0001",
                 success=True,
                 summary_metrics={"metric": 100.0},
-                artifacts_path=Path("/tmp/run_0001")
+                artifacts_path=Path("/tmp/run_0001"),
             ),
             RunResult(
                 label="run_0002",
                 success=True,
                 summary_metrics={"metric": 110.0},
-                artifacts_path=Path("/tmp/run_0002")
+                artifacts_path=Path("/tmp/run_0002"),
             ),
             RunResult(
                 label="run_0003",
                 success=True,
                 summary_metrics={"metric": 105.0},
-                artifacts_path=Path("/tmp/run_0003")
+                artifacts_path=Path("/tmp/run_0003"),
             ),
         ]
-        
+
         aggregate = strategy.aggregate(results)
         metric = aggregate.metrics["metric"]
-        
+
         # CV = std / mean (as a ratio, not percentage)
         expected_cv = metric.std / metric.mean
         assert metric.cv == pytest.approx(expected_cv)
@@ -229,47 +229,47 @@ class TestConfidenceAggregation:
     def test_cv_division_by_zero_handling(self):
         """Test CV handles division by zero when mean is zero."""
         strategy = ConfidenceAggregation()
-        
+
         # Create results with zero mean
         results = [
             RunResult(
                 label="run_0001",
                 success=True,
                 summary_metrics={"metric": 0.0},
-                artifacts_path=Path("/tmp/run_0001")
+                artifacts_path=Path("/tmp/run_0001"),
             ),
             RunResult(
                 label="run_0002",
                 success=True,
                 summary_metrics={"metric": 0.0},
-                artifacts_path=Path("/tmp/run_0002")
+                artifacts_path=Path("/tmp/run_0002"),
             ),
         ]
-        
+
         aggregate = strategy.aggregate(results)
         metric = aggregate.metrics["metric"]
-        
+
         # CV should be inf when mean is 0 (division by zero)
         assert metric.cv == float("inf")
 
     def test_confidence_interval_bounds(self):
         """Test confidence interval bounds are computed correctly."""
         strategy = ConfidenceAggregation(confidence_level=0.95)
-        
+
         values = [100.0, 110.0, 105.0, 95.0, 108.0]
         results = [
             RunResult(
                 label=f"run_{i:04d}",
                 success=True,
                 summary_metrics={"metric": val},
-                artifacts_path=Path(f"/tmp/run_{i:04d}")
+                artifacts_path=Path(f"/tmp/run_{i:04d}"),
             )
             for i, val in enumerate(values, 1)
         ]
-        
+
         aggregate = strategy.aggregate(results)
         metric = aggregate.metrics["metric"]
-        
+
         # Manually compute expected values
         mean = np.mean(values)
         std = np.std(values, ddof=1)
@@ -279,10 +279,10 @@ class TestConfidenceAggregation:
         alpha = 1 - 0.95
         t_critical = stats.t.ppf(1 - alpha / 2, df)
         margin = t_critical * se
-        
+
         expected_ci_low = mean - margin
         expected_ci_high = mean + margin
-        
+
         assert metric.mean == pytest.approx(mean)
         assert metric.std == pytest.approx(std)
         assert metric.se == pytest.approx(se)
@@ -292,7 +292,7 @@ class TestConfidenceAggregation:
     def test_unit_inference(self):
         """Test unit inference from metric names."""
         strategy = ConfidenceAggregation()
-        
+
         results = [
             RunResult(
                 label="run_0001",
@@ -303,7 +303,7 @@ class TestConfidenceAggregation:
                     "request_throughput_avg": 25.0,
                     "output_token_throughput_avg": 500.0,
                 },
-                artifacts_path=Path("/tmp/run_0001")
+                artifacts_path=Path("/tmp/run_0001"),
             ),
             RunResult(
                 label="run_0002",
@@ -314,12 +314,12 @@ class TestConfidenceAggregation:
                     "request_throughput_avg": 27.0,
                     "output_token_throughput_avg": 520.0,
                 },
-                artifacts_path=Path("/tmp/run_0002")
+                artifacts_path=Path("/tmp/run_0002"),
             ),
         ]
-        
+
         aggregate = strategy.aggregate(results)
-        
+
         # Verify units
         assert aggregate.metrics["ttft_avg"].unit == "ms"
         assert aggregate.metrics["tpot_avg"].unit == "ms"
@@ -329,40 +329,40 @@ class TestConfidenceAggregation:
     def test_metadata_includes_confidence_level(self):
         """Test metadata includes confidence level."""
         strategy = ConfidenceAggregation(confidence_level=0.99)
-        
+
         results = [
             RunResult(
                 label="run_0001",
                 success=True,
                 summary_metrics={"metric": 100.0},
-                artifacts_path=Path("/tmp/run_0001")
+                artifacts_path=Path("/tmp/run_0001"),
             ),
             RunResult(
                 label="run_0002",
                 success=True,
                 summary_metrics={"metric": 110.0},
-                artifacts_path=Path("/tmp/run_0002")
+                artifacts_path=Path("/tmp/run_0002"),
             ),
         ]
-        
+
         aggregate = strategy.aggregate(results)
-        
+
         assert "confidence_level" in aggregate.metadata
         assert aggregate.metadata["confidence_level"] == 0.99
-    
+
     def test_invalid_confidence_level_too_low(self):
         """Test that confidence level <= 0 raises ValueError."""
         with pytest.raises(ValueError, match="Invalid confidence level"):
             ConfidenceAggregation(confidence_level=0.0)
-        
+
         with pytest.raises(ValueError, match="Invalid confidence level"):
             ConfidenceAggregation(confidence_level=-0.1)
-    
+
     def test_invalid_confidence_level_too_high(self):
         """Test that confidence level >= 1 raises ValueError."""
         with pytest.raises(ValueError, match="Invalid confidence level"):
             ConfidenceAggregation(confidence_level=1.0)
-        
+
         with pytest.raises(ValueError, match="Invalid confidence level"):
             ConfidenceAggregation(confidence_level=1.5)
 
@@ -382,9 +382,9 @@ class TestConfidenceMetric:
             ci_low=98.5,
             ci_high=111.5,
             t_critical=2.262,
-            unit="ms"
+            unit="ms",
         )
-        
+
         assert metric.mean == 105.0
         assert metric.std == 5.0
         assert metric.min == 100.0

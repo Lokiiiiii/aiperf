@@ -7,67 +7,67 @@ from aiperf.exporters.aggregate.aggregate_base_exporter import AggregateBaseExpo
 
 class AggregateConfidenceJsonExporter(AggregateBaseExporter):
     """Exports confidence aggregate results to JSON format.
-    
+
     Uses adapter pattern to convert AggregateResult to JsonExportData,
     then leverages Pydantic serialization for consistency with single-run exports.
-    
+
     Design:
     - Reuses JsonExportData and JsonMetricResult models
     - Uses same serialization approach as MetricsJsonExporter
     - Ensures consistency: schema version, AIPerf version, format
     """
-    
+
     def get_file_name(self) -> str:
         """Return JSON file name.
-        
+
         Returns:
             str: "profile_export_aiperf_aggregate.json"
         """
         return "profile_export_aiperf_aggregate.json"
-    
+
     def _generate_content(self) -> str:
         """Generate JSON content from aggregate result.
-        
+
         Uses adapter pattern:
         1. Convert AggregateResult → JsonExportData
         2. Serialize using Pydantic (same as MetricsJsonExporter)
-        
+
         Returns:
             str: JSON content string
         """
         # Convert to JsonExportData format (adapter pattern)
         export_data = self._aggregate_to_export_data()
-        
+
         # Serialize using Pydantic (same approach as MetricsJsonExporter._generate_content())
         return export_data.model_dump_json(
             indent=2, exclude_unset=True, exclude_none=True
         )
-    
+
     def _aggregate_to_export_data(self):
         """Convert AggregateResult to JsonExportData format.
-        
+
         This is the adapter that bridges aggregate domain to export format.
         Reuses the same Pydantic models as single-run exports for consistency.
-        
+
         Returns:
             JsonExportData with aggregate metrics and metadata
         """
         from importlib.metadata import version as get_version
-        
+
         from aiperf.common.models.export_models import JsonExportData
-        
+
         # Get AIPerf version (same approach as MetricsJsonExporter)
         try:
             aiperf_version = get_version("aiperf")
         except Exception:
             aiperf_version = "unknown"
-        
+
         # Create base export data with standard metadata
         export_data = JsonExportData(
             schema_version=JsonExportData.SCHEMA_VERSION,
             aiperf_version=aiperf_version,
         )
-        
+
         # Add aggregate-specific metadata as extra field
         # (JsonExportData has extra="allow" to support this)
         aggregate_metadata = {
@@ -77,8 +77,8 @@ class AggregateConfidenceJsonExporter(AggregateBaseExporter):
             "failed_runs": self._result.failed_runs,
             **self._result.metadata,
         }
-        setattr(export_data, "metadata", aggregate_metadata)
-        
+        export_data.metadata = aggregate_metadata
+
         # Convert metrics and group them under "metrics" key
         metrics_dict = {}
         for metric_name, metric in self._result.metrics.items():
@@ -100,7 +100,7 @@ class AggregateConfidenceJsonExporter(AggregateBaseExporter):
             else:
                 # For other metric types, store as-is
                 metrics_dict[metric_name] = metric
-        
-        setattr(export_data, "metrics", metrics_dict)
-        
+
+        export_data.metrics = metrics_dict
+
         return export_data

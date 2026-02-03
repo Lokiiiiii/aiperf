@@ -3,13 +3,10 @@
 """Tests for aggregate exporters."""
 
 import json
-from pathlib import Path
-
-import pytest
 
 from aiperf.exporters.aggregate import (
-    AggregateConfidenceJsonExporter,
     AggregateConfidenceCsvExporter,
+    AggregateConfidenceJsonExporter,
     AggregateExporterConfig,
 )
 from aiperf.orchestrator.aggregation.base import AggregateResult
@@ -38,38 +35,38 @@ class TestAggregateExporters:
                     ci_low=98.5,
                     ci_high=111.5,
                     t_critical=2.262,
-                    unit="ms"
+                    unit="ms",
                 )
             },
-            metadata={"confidence_level": 0.95}
+            metadata={"confidence_level": 0.95},
         )
-        
+
         # Write JSON using exporter
         output_dir = tmp_path / "aggregate"
         config = AggregateExporterConfig(result=aggregate, output_dir=output_dir)
         exporter = AggregateConfidenceJsonExporter(config)
         json_path = exporter.export_sync()
-        
+
         # Verify file exists
         assert json_path.exists()
         assert json_path.name == "profile_export_aiperf_aggregate.json"
         assert json_path.parent == output_dir
-        
+
         # Verify content
         with open(json_path) as f:
             data = json.load(f)
-        
+
         # Check schema and version info (from existing exporters)
         assert "schema_version" in data
         assert "aiperf_version" in data
-        
+
         # Check aggregate metadata
         assert "metadata" in data
         assert data["metadata"]["aggregation_type"] == "confidence"
         assert data["metadata"]["num_profile_runs"] == 3
         assert data["metadata"]["num_successful_runs"] == 3
         assert data["metadata"]["confidence_level"] == 0.95
-        
+
         # Check metrics
         assert "metrics" in data
         assert "ttft_avg" in data["metrics"]
@@ -78,7 +75,7 @@ class TestAggregateExporters:
         assert data["metrics"]["ttft_avg"]["min"] == 100.0
         assert data["metrics"]["ttft_avg"]["max"] == 110.0
         assert data["metrics"]["ttft_avg"]["unit"] == "ms"
-        
+
         # Check confidence-specific fields
         assert data["metrics"]["ttft_avg"]["cv"] == 4.76
         assert data["metrics"]["ttft_avg"]["se"] == 2.89
@@ -105,7 +102,7 @@ class TestAggregateExporters:
                     ci_low=98.5,
                     ci_high=111.5,
                     t_critical=2.262,
-                    unit="ms"
+                    unit="ms",
                 ),
                 "tpot_avg": ConfidenceMetric(
                     mean=11.0,
@@ -117,36 +114,36 @@ class TestAggregateExporters:
                     ci_low=9.7,
                     ci_high=12.3,
                     t_critical=2.262,
-                    unit="ms"
-                )
+                    unit="ms",
+                ),
             },
-            metadata={"confidence_level": 0.95}
+            metadata={"confidence_level": 0.95},
         )
-        
+
         # Write CSV using exporter
         output_dir = tmp_path / "aggregate"
         config = AggregateExporterConfig(result=aggregate, output_dir=output_dir)
         exporter = AggregateConfidenceCsvExporter(config)
         csv_path = exporter.export_sync()
-        
+
         # Verify file exists
         assert csv_path.exists()
         assert csv_path.name == "profile_export_aiperf_aggregate.csv"
         assert csv_path.parent == output_dir
-        
+
         # Verify content - read as text to check structure
         with open(csv_path) as f:
             content = f.read()
-        
+
         # Check that metadata section exists (without "Aggregate Metadata" header)
         assert "confidence" in content
         assert "Confidence Level" in content or "confidence_level" in content
-        
+
         # Check that metrics section exists
         assert "ttft_avg" in content
         assert "tpot_avg" in content
         assert "105.00" in content  # ttft mean
-        assert "11.00" in content   # tpot mean
+        assert "11.00" in content  # tpot mean
 
     def test_write_creates_directory(self, tmp_path):
         """Test that write methods create output directory if it doesn't exist."""
@@ -166,21 +163,21 @@ class TestAggregateExporters:
                     ci_low=90.0,
                     ci_high=110.0,
                     t_critical=2.0,
-                    unit="ms"
+                    unit="ms",
                 )
             },
-            metadata={"key": "value"}
+            metadata={"key": "value"},
         )
-        
+
         # Use non-existent directory
         output_dir = tmp_path / "nested" / "path" / "aggregate"
         assert not output_dir.exists()
-        
+
         # Write should create directory
         config = AggregateExporterConfig(result=aggregate, output_dir=output_dir)
         exporter = AggregateConfidenceJsonExporter(config)
         json_path = exporter.export_sync()
-        
+
         assert output_dir.exists()
         assert output_dir.is_dir()
         assert json_path.exists()
@@ -197,15 +194,16 @@ class TestAggregateExporters:
             ci_low=90.0,
             ci_high=110.0,
             t_critical=2.0,
-            unit="ms"
+            unit="ms",
         )
-        
+
         json_result = metric.to_json_result()
-        
+
         # Check that it's a JsonMetricResult
         from aiperf.common.models.export_models import JsonMetricResult
+
         assert isinstance(json_result, JsonMetricResult)
-        
+
         # Check field mapping
         assert json_result.avg == 100.0  # mean → avg
         assert json_result.std == 5.0

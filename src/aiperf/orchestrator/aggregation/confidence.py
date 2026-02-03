@@ -44,20 +44,20 @@ class ConfidenceMetric:
 
     def to_json_result(self):
         """Convert to JsonMetricResult for export.
-        
+
         Maps confidence statistics to JSON export format:
         - mean → avg (mean of run-level averages)
         - std → std (std of run-level averages)
         - min/max → min/max (across runs)
-        
+
         Confidence-specific fields (cv, se, ci_low, ci_high, t_critical)
         are added as extra fields via JsonExportData's extra="allow" setting.
-        
+
         Returns:
             JsonMetricResult compatible with existing exporters
         """
         from aiperf.common.models.export_models import JsonMetricResult
-        
+
         return JsonMetricResult(
             unit=self.unit,
             avg=self.mean,
@@ -81,7 +81,7 @@ class ConfidenceAggregation(AggregationStrategy):
 
         Args:
             confidence_level: Confidence level for intervals (0 < level < 1)
-            
+
         Raises:
             ValueError: If confidence_level is not between 0 and 1
         """
@@ -111,7 +111,9 @@ class ConfidenceAggregation(AggregationStrategy):
         """
         # Separate successful and failed runs
         successful = [r for r in results if r.success]
-        failed = [{"label": r.label, "error": r.error} for r in results if not r.success]
+        failed = [
+            {"label": r.label, "error": r.error} for r in results if not r.success
+        ]
 
         if len(successful) < 2:
             if len(successful) == 0:
@@ -175,7 +177,9 @@ class ConfidenceAggregation(AggregationStrategy):
                 continue
 
             # Compute statistics
-            aggregated[metric_name] = self._compute_confidence_stats(values, metric_name)
+            aggregated[metric_name] = self._compute_confidence_stats(
+                values, metric_name
+            )
 
         return aggregated
 
@@ -239,11 +243,14 @@ class ConfidenceAggregation(AggregationStrategy):
         metric_lower = metric_name.lower()
 
         # Check for _ms suffix or ms in name
-        if "_ms" in metric_lower or metric_lower.endswith("ms") or "_avg" in metric_lower:
+        if (
+            "_ms" in metric_lower
+            or metric_lower.endswith("ms")
+            or "_avg" in metric_lower
+        ) and "throughput" not in metric_lower:
             # Most _avg metrics are time-based in ms
-            if "throughput" not in metric_lower:
-                return "ms"
-        
+            return "ms"
+
         if "throughput" in metric_lower and "token" in metric_lower:
             return "tokens/sec"
         elif "throughput" in metric_lower:

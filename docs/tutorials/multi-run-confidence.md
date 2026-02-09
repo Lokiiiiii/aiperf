@@ -18,59 +18,68 @@ By running multiple trials of the same benchmark, you can:
 - **Compute confidence intervals**: Get honest uncertainty estimates
 - **Make informed decisions**: Know if performance differences are statistically meaningful
 
-## UI Limitations in Multi-Run Mode
+## UI Behavior in Multi-Run Mode
 
-**Important**: The dashboard UI (`--ui dashboard`) has limitations in multi-run mode due to terminal control constraints.
+Multi-run mode automatically uses the `simple` UI by default for the best experience. The dashboard UI is not supported due to terminal control limitations.
 
-### What to Expect
+### Default UI Selection
 
-When using `--ui dashboard` with `--num-profile-runs > 1`:
-- ⚠️ **No live updates** during each run
-- ✅ **Final summary tables** appear after each run completes
-- ⚠️ Each run will appear to "hang" for its duration, then show results
+When using `--num-profile-runs > 1`, AIPerf automatically sets `--ui simple` unless you explicitly specify a different UI:
 
-This is a fundamental architectural limitation - Textual requires exclusive terminal control, which isn't possible when the orchestrator process coordinates multiple subprocess runs.
+```bash
+# These are equivalent - simple UI is auto-selected
+aiperf profile --num-profile-runs 5 ...
+aiperf profile --num-profile-runs 5 --ui simple ...
+```
 
-### Recommended UI Options for Multi-Run
+You'll see an informational message:
+```
+Multi-run mode: UI automatically set to 'simple' (use '--ui none' to disable UI output)
+```
 
-**Option 1: Simple UI (Recommended)**
+### Supported UI Options
+
+**Simple UI (Default)**
 ```bash
 aiperf profile \
   --num-profile-runs 5 \
-  --ui simple \
   ...
 ```
 Shows progress bars for each run - works well with multi-run mode.
 
-**Option 2: No UI**
+**No UI**
 ```bash
 aiperf profile \
   --num-profile-runs 5 \
   --ui none \
   ...
 ```
-Minimal output, fastest execution - ideal for automated runs.
+Minimal output, fastest execution - ideal for automated runs or CI/CD pipelines.
 
-**Option 3: Dashboard (Limited)**
+### Dashboard UI Not Supported
+
+The dashboard UI (`--ui dashboard`) is incompatible with multi-run mode due to terminal control constraints. If you explicitly try to use it, you'll get an error:
+
 ```bash
-aiperf profile \
-  --num-profile-runs 5 \
-  --ui dashboard \
-  ...
+aiperf profile --num-profile-runs 5 --ui dashboard ...
 ```
-Works but only shows final summaries - you'll see a warning at startup.
+
+```
+ValueError: Dashboard UI is not supported with multi-run mode (--num-profile-runs > 1)
+due to terminal control limitations. Please use '--ui simple' or '--ui none' instead.
+```
+
+This is a fundamental architectural limitation - Textual requires exclusive terminal control, which isn't possible when the orchestrator coordinates multiple subprocess runs.
 
 ### For Live Dashboard Monitoring
 
-If you need to see live dashboard updates, run benchmarks individually:
+If you need live dashboard updates, run benchmarks individually:
 ```bash
 # Run each benchmark separately with live dashboard
 aiperf profile --output-artifact-dir ./run1 --ui dashboard ...
 aiperf profile --output-artifact-dir ./run2 --ui dashboard ...
 aiperf profile --output-artifact-dir ./run3 --ui dashboard ...
 ```
-
-For more details, see the [Dashboard Multi-Run Behavior](../../DASHBOARD_MULTI_RUN_BEHAVIOR.md) documentation.
 
 ## Basic Usage
 
@@ -467,15 +476,10 @@ No overlap in CIs → Strong evidence that Config B is slower.
   - Good balance of time and precision
   - Recommended for most use cases
 
-- **High-precision**: 10+ runs
+- **High-precision**: 10 runs
   - When you need very precise estimates
   - When comparing small differences
   - When variance is high
-
-- **Production validation**: 20+ runs
-  - For critical performance validation
-  - When making important decisions
-  - When you need very narrow confidence intervals
 
 ### Signs You Need More Runs
 

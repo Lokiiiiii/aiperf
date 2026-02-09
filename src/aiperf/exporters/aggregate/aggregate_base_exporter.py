@@ -3,12 +3,32 @@
 """Base class for aggregate exporters."""
 
 from abc import ABC, abstractmethod
+from dataclasses import dataclass
 from pathlib import Path
 
 import aiofiles
 
 from aiperf.common.mixins import AIPerfLoggerMixin
-from aiperf.exporters.aggregate.aggregate_exporter_config import AggregateExporterConfig
+from aiperf.orchestrator.aggregation.base import AggregateResult
+
+
+@dataclass(slots=True)
+class AggregateExporterConfig:
+    """Configuration for aggregate exporters.
+
+    Simpler than ExporterConfig because aggregate exports don't need:
+    - ProfileResults (single-run data)
+    - TelemetryExportData (per-run telemetry)
+    - ServerMetricsResults (per-run server metrics)
+    - Full UserConfig (just need output directory)
+
+    Attributes:
+        result: AggregateResult to export
+        output_dir: Directory where export file will be written
+    """
+
+    result: AggregateResult
+    output_dir: Path
 
 
 class AggregateBaseExporter(AIPerfLoggerMixin, ABC):

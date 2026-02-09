@@ -57,12 +57,11 @@ class TestFixedTrialsStrategy:
     @pytest.mark.parametrize(
         "run_index,num_trials,expected",
         [
-            (0, 100, "run_0001"),
-            (1, 100, "run_0002"),
-            (9, 100, "run_0010"),
-            (99, 100, "run_0100"),
-            (0, 1000, "run_0001"),
-            (999, 1000, "run_1000"),
+            (0, 10, "run_0001"),
+            (1, 10, "run_0002"),
+            (9, 10, "run_0010"),
+            (0, 5, "run_0001"),
+            (4, 5, "run_0005"),
         ],
     )
     def test_get_run_label_zero_padding_returns_expected(
@@ -170,28 +169,10 @@ class TestFixedTrialsStrategy:
         assert new_config.input.random_seed == FixedTrialsStrategy.DEFAULT_SEED
         assert config.input.random_seed is None
 
-    def test_invalid_num_trials(self):
-        """Test that num_trials < 1 raises ValueError."""
-        with pytest.raises(ValueError, match="Invalid num_trials"):
-            FixedTrialsStrategy(num_trials=0)
-
-        with pytest.raises(ValueError, match="Invalid num_trials"):
-            FixedTrialsStrategy(num_trials=-1)
-
     def test_invalid_cooldown_seconds(self):
         """Test that negative cooldown raises ValueError."""
         with pytest.raises(ValueError, match="Invalid cooldown_seconds"):
             FixedTrialsStrategy(num_trials=5, cooldown_seconds=-1.0)
-
-    def test_large_num_trials_warning(self, caplog):
-        """Test that large num_trials generates a warning."""
-        import logging
-
-        with caplog.at_level(logging.WARNING):
-            strategy = FixedTrialsStrategy(num_trials=150)
-
-        assert "Large number of trials" in caplog.text
-        assert strategy.num_trials == 150
 
     def test_label_sanitization(self):
         """Test that labels are sanitized to prevent path traversal."""

@@ -2,7 +2,6 @@
 # SPDX-License-Identifier: Apache-2.0
 """Tests for MultiRunOrchestrator."""
 
-import copy
 import json
 from unittest.mock import Mock, patch
 
@@ -470,7 +469,7 @@ class TestMultiRunOrchestrator:
 
         def mock_execute(config, strategy, run_index):
             # Capture the config used
-            configs_used.append(copy.deepcopy(config))
+            configs_used.append(config.model_copy(deep=True))
             return RunResult(
                 label=strategy.get_run_label(run_index),
                 success=True,
@@ -478,12 +477,8 @@ class TestMultiRunOrchestrator:
                 artifacts_path=tmp_path / strategy.get_run_label(run_index),
             )
 
-        with (
-            patch.object(orchestrator, "_execute_single_run", side_effect=mock_execute),
-            patch(
-                "aiperf.orchestrator.orchestrator.copy.deepcopy",
-                side_effect=copy.deepcopy,
-            ),
+        with patch.object(
+            orchestrator, "_execute_single_run", side_effect=mock_execute
         ):
             orchestrator.execute(mock_user_config, strategy)
 

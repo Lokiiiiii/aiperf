@@ -14,7 +14,7 @@ from aiperf.orchestrator.models import RunResult
 logger = logging.getLogger(__name__)
 
 
-@dataclass
+@dataclass(slots=True)
 class ConfidenceMetric:
     """Statistics for a single metric across runs.
 
@@ -190,7 +190,7 @@ class ConfidenceAggregation(AggregationStrategy):
 
         Args:
             values: List of metric values across runs
-            metric_name: Name of the metric
+            metric_name: Name of the metric (e.g., "time_to_first_token_avg")
 
         Returns:
             ConfidenceMetric with computed statistics
@@ -215,8 +215,8 @@ class ConfidenceAggregation(AggregationStrategy):
         ci_low = mean - margin
         ci_high = mean + margin
 
-        # Get unit from metric name (heuristic)
-        unit = self._infer_unit(metric_name)
+        # Get unit from metric definition
+        unit = self._get_metric_unit(metric_name)
 
         return ConfidenceMetric(
             mean=mean,
@@ -231,33 +231,55 @@ class ConfidenceAggregation(AggregationStrategy):
             unit=unit,
         )
 
-    def _infer_unit(self, metric_name: str) -> str:
-        """Infer unit from metric name.
+    def _get_metric_unit(self, metric_name: str) -> str:
+        """Get unit from metric definition in MetricRegistry.
+
+        Extracts the metric tag from the full metric name (e.g., "time_to_first_token_avg"
+        → "time_to_first_token") and looks up the display unit from the MetricRegistry.
 
         Args:
-            metric_name: Name of the metric
+            metric_name: Full metric name with statistical suffix (e.g., "time_to_first_token_avg")
 
         Returns:
-            Unit string (e.g., "ms", "requests/sec")
+            Unit string from metric definition (e.g., "ms", "requests/sec")
+            Returns empty string if metric not found in registry.
         """
-        metric_lower = metric_name.lower()
+        from aiperf.metrics.metric_registry import MetricRegistry
 
-        # Check for _ms suffix or ms in name
-        if (
-            "_ms" in metric_lower
-            or metric_lower.endswith("ms")
-            or "_avg" in metric_lower
-        ) and "throughput" not in metric_lower:
-            # Most _avg metrics are time-based in ms
-            return "ms"
+        # Extract metric tag by removing statistical suffix (_avg, _p50, _p90, etc.)
+        # Common suffixes: _avg, _min, _max, _std, _p50, _p90, _p95, _p99, _count
+        stat_suffixes = [
+            "_avg",
+            "_min",
+            "_max",
+            "_std",
+            "_p50",
+            "_p90",
+            "_p95",
+            "_p99",
+            "_count",
+        ]
 
-        if "throughput" in metric_lower and "token" in metric_lower:
-            return "tokens/sec"
-        elif "throughput" in metric_lower:
-            return "requests/sec"
-        elif "count" in metric_lower:
-            return "count"
-        elif "rate" in metric_lower:
-            return "rate"
-        else:
+        metric_tag = metric_name
+        for suffix in stat_suffixes:
+            if metric_name.endswith(suffix):
+                metric_tag = metric_name[: -len(suffix)]
+                break
+
+        try:
+            # Get metric instance from registry
+            metric = MetricRegistry.get_instance(metric_tag)
+
+            # Use display_unit if available, otherwise use base unit
+            unit = metric.display_unit if metric.display_unit else metric.unit
+
+            # Convert unit enum to string if needed
+            return str(unit) if unit else ""
+
+        except Exception:
+            # Metric not found in registry - log warning and return empty string
+            logger.warning(
+                f"Metric '{metric_tag}' not found in MetricRegistry. "
+                f"Cannot determine unit for '{metric_name}'. Using empty string."
+            )
             return ""

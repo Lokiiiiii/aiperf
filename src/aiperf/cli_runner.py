@@ -2,11 +2,16 @@
 # SPDX-License-Identifier: Apache-2.0
 
 import contextlib
+from typing import TYPE_CHECKING
 
 from aiperf.cli_utils import raise_startup_error_and_exit
 from aiperf.common.config import ServiceConfig, UserConfig
 from aiperf.gpu_telemetry.metrics_config import MetricsConfigLoader
 from aiperf.plugin.enums import ServiceType, UIType
+
+if TYPE_CHECKING:
+    from aiperf.common.aiperf_logger import AIPerfLogger
+    from aiperf.orchestrator.aggregation.base import AggregateResult
 
 
 def run_system_controller(
@@ -18,6 +23,22 @@ def run_system_controller(
     If num_profile_runs > 1, runs multi-run orchestration for confidence reporting.
     Otherwise, runs a single benchmark (backward compatibility).
     """
+    from aiperf.common.aiperf_logger import AIPerfLogger
+
+    logger = AIPerfLogger(__name__)
+
+    # Warn if using dashboard UI with multi-run mode
+    if (
+        user_config.loadgen.num_profile_runs > 1
+        and service_config.ui_type == UIType.DASHBOARD
+    ):
+        logger.warning(
+            "Dashboard UI does not show live updates in multi-run mode due to terminal control limitations. "
+            "Only final summaries will be displayed after each run completes. "
+            "For better multi-run experience, consider using '--ui simple' or '--ui none'. "
+            "See documentation for details."
+        )
+
     # Check if multi-run mode is enabled
     if user_config.loadgen.num_profile_runs > 1:
         _run_multi_benchmark(user_config, service_config)
@@ -158,7 +179,7 @@ def _run_multi_benchmark(
     strategy = FixedTrialsStrategy(
         num_trials=num_runs,
         cooldown_seconds=cooldown,
-        auto_set_seed=True,
+        auto_set_seed=user_config.loadgen.set_consistent_seed,
         disable_warmup_after_first=user_config.loadgen.profile_run_disable_warmup_after_first,
     )
 
@@ -194,11 +215,10 @@ def _run_multi_benchmark(
         # Add cooldown to metadata
         aggregate_result.metadata["cooldown_seconds"] = cooldown
 
-        # Write aggregate artifacts using exporters directly
+        # Write aggregate artifacts using exporters
         aggregate_dir = strategy.get_aggregate_path(
             user_config.output.artifact_directory
         )
-        aggregate_dir.mkdir(parents=True, exist_ok=True)
 
         # Create exporter config
         exporter_config = AggregateExporterConfig(
@@ -206,13 +226,27 @@ def _run_multi_benchmark(
             output_dir=aggregate_dir,
         )
 
-        # Export JSON
-        json_exporter = AggregateConfidenceJsonExporter(exporter_config)
-        json_path = json_exporter.export_sync()
+        # Export both JSON and CSV in a single async context
+        # This avoids multiple asyncio.run() calls and is more efficient
+        import asyncio
 
-        # Export CSV
-        csv_exporter = AggregateConfidenceCsvExporter(exporter_config)
-        csv_path = csv_exporter.export_sync()
+        async def export_artifacts():
+            """Export aggregate artifacts asynchronously."""
+            # Create directory asynchronously
+            await asyncio.to_thread(aggregate_dir.mkdir, parents=True, exist_ok=True)
+
+            # Export JSON and CSV concurrently
+            json_exporter = AggregateConfidenceJsonExporter(exporter_config)
+            csv_exporter = AggregateConfidenceCsvExporter(exporter_config)
+
+            json_path, csv_path = await asyncio.gather(
+                json_exporter.export(),
+                csv_exporter.export(),
+            )
+
+            return json_path, csv_path
+
+        json_path, csv_path = asyncio.run(export_artifacts())
 
         logger.info(f"Aggregate JSON written to: {json_path}")
         logger.info(f"Aggregate CSV written to: {csv_path}")
@@ -237,7 +271,9 @@ def _run_multi_benchmark(
         sys.exit(1)
 
 
-def _print_aggregate_summary(aggregate_result, logger) -> None:
+def _print_aggregate_summary(
+    aggregate_result: "AggregateResult", logger: "AIPerfLogger"
+) -> None:
     """Print a comprehensive summary of aggregate statistics to console.
 
     Args:

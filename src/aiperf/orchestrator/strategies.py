@@ -2,9 +2,10 @@
 # SPDX-License-Identifier: Apache-2.0
 """Execution strategies for multi-run orchestration."""
 
-import copy
 import logging
+import re
 from abc import ABC, abstractmethod
+from pathlib import Path
 
 from aiperf.common.config import UserConfig
 from aiperf.orchestrator.models import RunResult
@@ -28,7 +29,7 @@ class ExecutionStrategy(ABC):
     5. Cooldown duration between runs
     """
 
-    def validate_config(self, config: UserConfig) -> None:
+    def validate_config(self, config: UserConfig) -> None:  # noqa: B027
         """Validate that config is suitable for this strategy.
 
         Override this method to add strategy-specific validation.
@@ -39,7 +40,7 @@ class ExecutionStrategy(ABC):
         """
         # Default implementation: no validation required
         # Subclasses can override to add strategy-specific validation
-        _ = config  # Mark as intentionally unused
+        pass
 
     @abstractmethod
     def should_continue(self, results: list[RunResult]) -> bool:
@@ -86,7 +87,7 @@ class ExecutionStrategy(ABC):
         pass
 
     @abstractmethod
-    def get_run_path(self, base_dir, run_index: int):
+    def get_run_path(self, base_dir: Path, run_index: int) -> Path:
         """Build path for a run's artifacts.
 
         Strategy decides the directory structure based on its execution model.
@@ -104,7 +105,7 @@ class ExecutionStrategy(ABC):
         pass
 
     @abstractmethod
-    def get_aggregate_path(self, base_dir):
+    def get_aggregate_path(self, base_dir: Path) -> Path:
         """Build path for aggregate artifacts.
 
         Strategy decides where aggregate statistics should be stored.
@@ -140,7 +141,7 @@ class FixedTrialsStrategy(ExecutionStrategy):
         cooldown_seconds: float = 0.0,
         auto_set_seed: bool = True,
         disable_warmup_after_first: bool = True,
-    ):
+    ) -> None:
         """Initialize FixedTrialsStrategy.
 
         Args:
@@ -153,20 +154,15 @@ class FixedTrialsStrategy(ExecutionStrategy):
                 warmup (useful for long cooldown periods or cold-start scenarios).
 
         Raises:
-            ValueError: If num_trials < 1 or cooldown_seconds < 0
-        """
-        if num_trials < 1:
-            raise ValueError(f"Invalid num_trials: {num_trials}. Must be at least 1.")
+            ValueError: If cooldown_seconds < 0
 
+        Note:
+            num_trials validation is handled by Pydantic at the config level
+            (LoadGeneratorConfig.num_profile_runs with ge=1, le=10 constraints).
+        """
         if cooldown_seconds < 0:
             raise ValueError(
                 f"Invalid cooldown_seconds: {cooldown_seconds}. Must be non-negative."
-            )
-
-        if num_trials > 100:
-            logger.warning(
-                f"Large number of trials ({num_trials}) may result in very long execution times. "
-                f"Consider reducing num_trials or using a more efficient strategy."
             )
 
         self.num_trials = num_trials
@@ -248,8 +244,6 @@ class FixedTrialsStrategy(ExecutionStrategy):
             Sanitized label safe for filesystem paths
         """
         # Remove any path separators and parent directory references
-        import re
-
         sanitized = re.sub(r"[/\\]|\.\.", "", label)
         # Remove any other potentially dangerous characters
         sanitized = re.sub(r'[<>:"|?*]', "", sanitized)
@@ -259,10 +253,21 @@ class FixedTrialsStrategy(ExecutionStrategy):
         """Return configured cooldown duration."""
         return self.cooldown_seconds
 
-    def get_run_path(self, base_dir, run_index: int):
+    def get_run_path(self, base_dir: Path, run_index: int) -> Path:
         """Build path for a run's artifacts.
 
         For fixed trials, uses flat structure: base_dir/profile_runs/run_NNNN/
+
+        Directory Structure Example:
+        When base_dir is the auto-generated artifact directory:
+        artifacts/llama-3-8b-openai-chat-concurrency_10/profile_runs/run_0001/
+        artifacts/llama-3-8b-openai-chat-concurrency_10/profile_runs/run_0002/
+        artifacts/llama-3-8b-openai-chat-concurrency_10/aggregate/
+
+        The base_dir includes the auto-generated name with model, service, and stimulus:
+        - Model name (e.g., "llama-3-8b")
+        - Service kind and endpoint type (e.g., "openai-chat")
+        - Stimulus (e.g., "concurrency_10", "request_rate_100")
 
         Args:
             base_dir: Base artifact directory (Path)
@@ -271,16 +276,21 @@ class FixedTrialsStrategy(ExecutionStrategy):
         Returns:
             Path where this run's artifacts should be stored
         """
-        from pathlib import Path
-
         base_dir = Path(base_dir)
         label = self.get_run_label(run_index)
         return base_dir / "profile_runs" / label
 
-    def get_aggregate_path(self, base_dir):
+    def get_aggregate_path(self, base_dir: Path) -> Path:
         """Build path for aggregate artifacts.
 
         For fixed trials, uses single aggregate directory: base_dir/aggregate/
+
+        Directory Structure Example:
+        artifacts/llama-3-8b-openai-chat-concurrency_10/aggregate/
+
+        This directory contains the aggregated results across all runs:
+        - profile_export_aiperf_aggregate.json
+        - profile_export_aiperf_aggregate.csv
 
         Args:
             base_dir: Base artifact directory (Path)
@@ -288,8 +298,6 @@ class FixedTrialsStrategy(ExecutionStrategy):
         Returns:
             Path where aggregate artifacts should be stored
         """
-        from pathlib import Path
-
         base_dir = Path(base_dir)
         return base_dir / "aggregate"
 
@@ -309,7 +317,7 @@ class FixedTrialsStrategy(ExecutionStrategy):
                 f"No --random-seed specified. Using default seed {self.DEFAULT_SEED} "
                 f"for multi-run consistency. All runs will use identical workloads."
             )
-            config = copy.deepcopy(config)
+            config = config.model_copy(deep=True)
             config.input.random_seed = self.DEFAULT_SEED
 
         return config
@@ -336,6 +344,6 @@ class FixedTrialsStrategy(ExecutionStrategy):
         Returns:
             Configuration with all warmup parameters set to None
         """
-        config = copy.deepcopy(config)
+        config = config.model_copy(deep=True)
         config.loadgen.disable_warmup()
         return config

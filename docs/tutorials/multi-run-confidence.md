@@ -18,6 +18,60 @@ By running multiple trials of the same benchmark, you can:
 - **Compute confidence intervals**: Get honest uncertainty estimates
 - **Make informed decisions**: Know if performance differences are statistically meaningful
 
+## UI Limitations in Multi-Run Mode
+
+**Important**: The dashboard UI (`--ui dashboard`) has limitations in multi-run mode due to terminal control constraints.
+
+### What to Expect
+
+When using `--ui dashboard` with `--num-profile-runs > 1`:
+- ⚠️ **No live updates** during each run
+- ✅ **Final summary tables** appear after each run completes
+- ⚠️ Each run will appear to "hang" for its duration, then show results
+
+This is a fundamental architectural limitation - Textual requires exclusive terminal control, which isn't possible when the orchestrator process coordinates multiple subprocess runs.
+
+### Recommended UI Options for Multi-Run
+
+**Option 1: Simple UI (Recommended)**
+```bash
+aiperf profile \
+  --num-profile-runs 5 \
+  --ui simple \
+  ...
+```
+Shows progress bars for each run - works well with multi-run mode.
+
+**Option 2: No UI**
+```bash
+aiperf profile \
+  --num-profile-runs 5 \
+  --ui none \
+  ...
+```
+Minimal output, fastest execution - ideal for automated runs.
+
+**Option 3: Dashboard (Limited)**
+```bash
+aiperf profile \
+  --num-profile-runs 5 \
+  --ui dashboard \
+  ...
+```
+Works but only shows final summaries - you'll see a warning at startup.
+
+### For Live Dashboard Monitoring
+
+If you need to see live dashboard updates, run benchmarks individually:
+```bash
+# Run each benchmark separately with live dashboard
+aiperf profile --output-artifact-dir ./run1 --ui dashboard ...
+aiperf profile --output-artifact-dir ./run2 --ui dashboard ...
+aiperf profile --output-artifact-dir ./run3 --ui dashboard ...
+```
+
+For more details, see the [Dashboard Multi-Run Behavior](../../DASHBOARD_MULTI_RUN_BEHAVIOR.md) documentation.
+
 ## Basic Usage
 
 ### Simple Multi-Run Benchmark
@@ -66,24 +120,37 @@ aiperf profile \
 
 ## Output Structure
 
-When `--num-profile-runs > 1`, AIPerf creates a hierarchical output structure:
+When `--num-profile-runs > 1`, AIPerf creates a hierarchical output structure with an auto-generated directory name:
 
 ```
 artifacts/
-  profile_runs/
-    run_0001/
-      profile_export_aiperf.json
-      profile_export_aiperf.csv
-      profile_export.jsonl
-      inputs.json
-    run_0002/
-      ...
-    run_0005/
-      ...
-  aggregate/
-    profile_export_aiperf_aggregate.json
-    profile_export_aiperf_aggregate.csv
+  llama-3-8b-openai-chat-concurrency_10/
+    profile_runs/
+      run_0001/
+        profile_export_aiperf.json
+        profile_export_aiperf.csv
+        profile_export.jsonl
+        inputs.json
+      run_0002/
+        ...
+      run_0005/
+        ...
+    aggregate/
+      profile_export_aiperf_aggregate.json
+      profile_export_aiperf_aggregate.csv
 ```
+
+### Auto-Generated Directory Name
+
+The directory name is automatically generated based on your benchmark configuration:
+- **Model name**: e.g., `llama-3-8b` (from `--model`)
+- **Service kind and endpoint type**: e.g., `openai-chat` (from `--endpoint-type`)
+- **Stimulus**: e.g., `concurrency_10` (from `--concurrency`) or `request_rate_100` (from `--request-rate`)
+
+Examples:
+- `artifacts/gpt-4-openai-chat-concurrency_50/`
+- `artifacts/mistral-7b-openai-completions-request_rate_10/`
+- `artifacts/llama-2-13b-nim-embeddings-concurrency_20/`
 
 ### Per-Run Artifacts
 
@@ -156,6 +223,160 @@ For each metric, the aggregate output includes:
   }
 }
 ```
+
+## Detailed Metric Definitions
+
+This section provides detailed mathematical definitions for each aggregate statistic computed across multiple runs.
+
+### Mean (μ)
+
+**Type:** Aggregate Statistic
+
+The average value of the metric across all successful runs.
+
+**Formula:**
+```python
+mean = sum(values) / n
+```
+
+**Example:**
+If TTFT p99 values across 5 runs are [150ms, 152ms, 148ms, 155ms, 151ms], the mean is 151.2ms.
+
+---
+
+### Standard Deviation (σ)
+
+**Type:** Aggregate Statistic
+
+Measures the spread or dispersion of metric values across runs. Uses sample standard deviation (N-1 degrees of freedom).
+
+**Formula:**
+```python
+std = sqrt(sum((x - mean)^2) / (n - 1))
+```
+
+**Example:**
+For the TTFT values above, std ≈ 2.59ms, indicating low variability.
+
+---
+
+### Minimum
+
+**Type:** Aggregate Statistic
+
+The smallest value observed across all runs.
+
+**Example:**
+For the TTFT values above, min = 148ms.
+
+---
+
+### Maximum
+
+**Type:** Aggregate Statistic
+
+The largest value observed across all runs.
+
+**Example:**
+For the TTFT values above, max = 155ms.
+
+---
+
+### Coefficient of Variation (CV)
+
+**Type:** Aggregate Statistic
+
+A normalized measure of variability, expressed as a ratio (not percentage). Useful for comparing variability across metrics with different scales.
+
+**Formula:**
+```python
+cv = std / mean
+```
+
+**Notes:**
+- Returns `inf` when mean is zero (division by zero)
+- Lower CV indicates more consistent measurements
+
+**Example:**
+For the TTFT values above, CV = 2.59 / 151.2 ≈ 0.017 (1.7%), indicating excellent repeatability.
+
+---
+
+### Standard Error (SE)
+
+**Type:** Aggregate Statistic
+
+Measures the uncertainty in the estimated mean. Decreases as sample size increases.
+
+**Formula:**
+```python
+se = std / sqrt(n)
+```
+
+**Example:**
+For the TTFT values above with n=5, SE = 2.59 / sqrt(5) ≈ 1.16ms.
+
+**Notes:**
+- Smaller SE indicates more precise estimate of the true mean
+- SE decreases proportionally to 1/sqrt(n)
+
+---
+
+### Confidence Interval (CI)
+
+**Type:** Aggregate Statistic
+
+A range that likely contains the true population mean with a specified confidence level (default 95%).
+
+**Formula:**
+```python
+ci_low = mean - t_critical * se
+ci_high = mean + t_critical * se
+```
+
+Where `t_critical` is the critical value from the t-distribution with (n-1) degrees of freedom.
+
+**Example:**
+For the TTFT values above with 95% confidence:
+- t_critical ≈ 2.776 (for n=5, df=4)
+- CI = [151.2 - 2.776 * 1.16, 151.2 + 2.776 * 1.16] = [148.0ms, 154.4ms]
+
+We're 95% confident the true mean TTFT is between 148.0ms and 154.4ms.
+
+**Notes:**
+- Uses t-distribution (not normal) for mathematically precise critical values
+- Confidence level configurable via `--confidence-level` (default 0.95)
+- CI width decreases with more runs (larger n)
+
+---
+
+### t-Critical Value
+
+**Type:** Aggregate Statistic
+
+The critical value from the t-distribution used to compute confidence intervals. Depends on sample size and confidence level.
+
+**Formula:**
+```python
+t_critical = t.ppf(1 - alpha/2, df)
+```
+
+Where:
+- `alpha = 1 - confidence_level`
+- `df = n - 1` (degrees of freedom)
+- `t.ppf` is the percent point function (inverse CDF) of the t-distribution
+
+**Example:**
+- For n=5 runs and 95% confidence: t_critical ≈ 2.776
+- For n=10 runs and 95% confidence: t_critical ≈ 2.262
+- For n=5 runs and 99% confidence: t_critical ≈ 4.604
+
+**Notes:**
+- Computed using scipy.stats.t.ppf() for mathematical precision
+- Larger sample sizes have smaller t-critical values (approach normal distribution)
+- Higher confidence levels have larger t-critical values (wider intervals)
+
+---
 
 ## Interpreting Results
 

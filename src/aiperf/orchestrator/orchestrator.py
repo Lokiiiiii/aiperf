@@ -2,10 +2,13 @@
 # SPDX-License-Identifier: Apache-2.0
 """Multi-run orchestrator for AIPerf benchmarks."""
 
-import copy
 import logging
+import subprocess
+import sys
 import time
 from pathlib import Path
+
+import orjson
 
 from aiperf.common.config import ServiceConfig, UserConfig
 from aiperf.orchestrator.models import RunResult
@@ -121,17 +124,13 @@ class MultiRunOrchestrator:
         Returns:
             RunResult with success status and metrics or error
         """
-        import json
-        import subprocess
-        import sys
-
         try:
             # Strategy determines artifact path and label
             artifacts_path = strategy.get_run_path(self.base_dir, run_index)
             artifacts_path.mkdir(parents=True, exist_ok=True)
             label = strategy.get_run_label(run_index)
 
-            config = copy.deepcopy(config)
+            config = config.model_copy(deep=True)
             config.output.artifact_directory = artifacts_path
 
             # Serialize configs to JSON
@@ -149,20 +148,26 @@ class MultiRunOrchestrator:
             # Write config to artifact directory for debugging and reproducibility
             # This allows users to see exactly what config was used for each run
             config_file = artifacts_path / "run_config.json"
-            with open(config_file, "w", encoding="utf-8") as f:
-                json.dump(config_data, f, indent=2)
+            with open(config_file, "wb") as f:
+                f.write(orjson.dumps(config_data, option=orjson.OPT_INDENT_2))
 
             # Run the benchmark in a subprocess using the dedicated runner module
             # The runner loads the config and calls _run_single_benchmark()
             # No timeout is set - SystemController handles benchmark duration and grace period internally
+            # stdin/stdout are passed through to terminal so Textual can detect TTY and render live dashboard
+            # stderr is captured for error reporting
+            # -u flag forces unbuffered output so live dashboard updates are visible immediately
             result = subprocess.run(
                 [
                     sys.executable,
+                    "-u",  # Unbuffered output - critical for live dashboard rendering
                     "-m",
                     "aiperf.orchestrator._subprocess_runner",
                     str(config_file),
                 ],
-                capture_output=True,
+                stdin=sys.stdin,  # Pass through stdin so Textual can detect interactive TTY
+                stdout=sys.stdout,  # Pass through stdout for live dashboard rendering
+                stderr=subprocess.PIPE,  # Capture for error reporting
                 text=True,
             )
 
@@ -240,8 +245,6 @@ class MultiRunOrchestrator:
         Returns:
             Dict mapping metric name to value (e.g., {"time_to_first_token_p99": 152.7})
         """
-        from aiperf.common.models.export_models import JsonExportData
-
         # Read the profile export JSON file
         json_file = artifacts_path / "profile_export_aiperf.json"
 
@@ -250,21 +253,18 @@ class MultiRunOrchestrator:
             return {}
 
         try:
-            # Use Pydantic to deserialize the JSON file
-            # This handles validation and gives us a typed object
-            with open(json_file) as f:
-                export_data = JsonExportData.model_validate_json(f.read())
+            # Load JSON as dict directly for efficient iteration
+            with open(json_file, "rb") as f:
+                data = orjson.loads(f.read())
 
             # Extract metrics dynamically by iterating over all fields
-            # JsonExportData uses extra="allow", so it can have additional metrics
+            # The export data uses extra="allow", so it can have additional metrics
             # beyond what's explicitly defined in the model
             metrics = {}
 
-            # Get all fields from the Pydantic model
-            for field_name, field_value in export_data.model_dump(
-                exclude_none=True
-            ).items():
-                # Check if this field is a JsonMetricResult (has the metric structure)
+            # Iterate over all fields in the data
+            for field_name, field_value in data.items():
+                # Check if this field is a metric (has the metric structure with "unit")
                 if isinstance(field_value, dict) and "unit" in field_value:
                     # This is a metric - extract all statistical values
                     for stat_key, stat_value in field_value.items():
@@ -283,6 +283,6 @@ class MultiRunOrchestrator:
 
             return metrics
 
-        except Exception as e:
-            logger.exception(f"Error extracting metrics from {json_file}: {e}")
+        except Exception:
+            logger.exception(f"Error extracting metrics from {json_file}")
             return {}

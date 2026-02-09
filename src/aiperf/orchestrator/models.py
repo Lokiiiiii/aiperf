@@ -2,15 +2,15 @@
 # SPDX-License-Identifier: Apache-2.0
 """Data models for multi-run orchestration."""
 
-from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
+
+from pydantic import BaseModel, Field
 
 from aiperf.common.config import UserConfig
 
 
-@dataclass
-class RunConfig:
+class RunConfig(BaseModel):
     """Configuration for a single benchmark run.
 
     Attributes:
@@ -21,11 +21,10 @@ class RunConfig:
 
     config: UserConfig
     label: str
-    metadata: dict[str, Any] = field(default_factory=dict)
+    metadata: dict[str, Any] = Field(default_factory=dict)
 
 
-@dataclass
-class RunResult:
+class RunResult(BaseModel):
     """Result from executing a single benchmark run.
 
     Attributes:
@@ -38,6 +37,6 @@ class RunResult:
 
     label: str
     success: bool
-    summary_metrics: dict[str, float] = field(default_factory=dict)
+    summary_metrics: dict[str, float] = Field(default_factory=dict)
     error: str | None = None
     artifacts_path: Path | None = None

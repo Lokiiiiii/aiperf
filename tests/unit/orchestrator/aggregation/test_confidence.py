@@ -290,7 +290,7 @@ class TestConfidenceAggregation:
         assert metric.ci_high == pytest.approx(expected_ci_high)
 
     def test_unit_inference(self):
-        """Test unit inference from metric names."""
+        """Test unit extraction from MetricRegistry."""
         strategy = ConfidenceAggregation()
 
         results = [
@@ -298,8 +298,8 @@ class TestConfidenceAggregation:
                 label="run_0001",
                 success=True,
                 summary_metrics={
-                    "ttft_avg": 100.0,
-                    "tpot_avg": 10.0,
+                    "time_to_first_token_avg": 100.0,
+                    "inter_token_latency_avg": 10.0,
                     "request_throughput_avg": 25.0,
                     "output_token_throughput_avg": 500.0,
                 },
@@ -309,8 +309,8 @@ class TestConfidenceAggregation:
                 label="run_0002",
                 success=True,
                 summary_metrics={
-                    "ttft_avg": 110.0,
-                    "tpot_avg": 12.0,
+                    "time_to_first_token_avg": 110.0,
+                    "inter_token_latency_avg": 12.0,
                     "request_throughput_avg": 27.0,
                     "output_token_throughput_avg": 520.0,
                 },
@@ -320,9 +320,9 @@ class TestConfidenceAggregation:
 
         aggregate = strategy.aggregate(results)
 
-        # Verify units
-        assert aggregate.metrics["ttft_avg"].unit == "ms"
-        assert aggregate.metrics["tpot_avg"].unit == "ms"
+        # Verify units are extracted from MetricRegistry
+        assert aggregate.metrics["time_to_first_token_avg"].unit == "ms"
+        assert aggregate.metrics["inter_token_latency_avg"].unit == "ms"
         assert aggregate.metrics["request_throughput_avg"].unit == "requests/sec"
         assert aggregate.metrics["output_token_throughput_avg"].unit == "tokens/sec"
 

@@ -7,9 +7,10 @@ It's used by MultiRunOrchestrator to execute each run in complete isolation,
 allowing the SystemController to call os._exit() without affecting the orchestrator.
 """
 
-import json
 import sys
 from pathlib import Path
+
+import orjson
 
 
 def main() -> None:
@@ -49,8 +50,8 @@ def main() -> None:
 
     try:
         # Load config from JSON file
-        with open(config_file, encoding="utf-8") as f:
-            config_data = json.load(f)
+        with open(config_file, "rb") as f:
+            config_data = orjson.loads(f.read())
 
         # Deserialize using Pydantic validation
         user_config = UserConfig.model_validate(config_data["user_config"])
@@ -64,7 +65,7 @@ def main() -> None:
     except KeyError as e:
         print(f"Error: Missing required config key: {e}", file=sys.stderr)
         sys.exit(1)
-    except json.JSONDecodeError as e:
+    except orjson.JSONDecodeError as e:
         print(f"Error: Invalid JSON in config file: {e}", file=sys.stderr)
         sys.exit(1)
     except Exception as e:

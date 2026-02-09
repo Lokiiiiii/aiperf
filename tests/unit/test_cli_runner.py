@@ -4,7 +4,7 @@
 """Tests for cli_runner.py"""
 
 from pathlib import Path
-from unittest.mock import MagicMock, Mock, patch
+from unittest.mock import AsyncMock, MagicMock, Mock, patch
 
 import pytest
 
@@ -56,6 +56,74 @@ class TestRunSystemController:
         run_system_controller(user_config_multi_run, service_config)
 
         mock_multi.assert_called_once_with(user_config_multi_run, service_config)
+
+    @patch("aiperf.cli_runner._run_multi_benchmark")
+    def test_warns_when_using_dashboard_ui_with_multi_run(
+        self,
+        mock_multi: Mock,
+        user_config_multi_run: UserConfig,
+        service_config: ServiceConfig,
+        caplog: pytest.LogCaptureFixture,
+    ):
+        """Test that a warning is logged when using dashboard UI with multi-run."""
+        from aiperf.cli_runner import run_system_controller
+
+        # Set dashboard UI
+        service_config.ui_type = UIType.DASHBOARD
+
+        run_system_controller(user_config_multi_run, service_config)
+
+        # Check that warning was logged
+        assert any(
+            "Dashboard UI does not show live updates in multi-run mode"
+            in record.message
+            for record in caplog.records
+        )
+        assert any(record.levelname == "WARNING" for record in caplog.records)
+
+    @patch("aiperf.cli_runner._run_multi_benchmark")
+    def test_no_warning_when_using_simple_ui_with_multi_run(
+        self,
+        mock_multi: Mock,
+        user_config_multi_run: UserConfig,
+        service_config: ServiceConfig,
+        caplog: pytest.LogCaptureFixture,
+    ):
+        """Test that no warning is logged when using simple UI with multi-run."""
+        from aiperf.cli_runner import run_system_controller
+
+        # Set simple UI
+        service_config.ui_type = UIType.SIMPLE
+
+        run_system_controller(user_config_multi_run, service_config)
+
+        # Check that no dashboard warning was logged
+        assert not any(
+            "Dashboard UI does not show live updates" in record.message
+            for record in caplog.records
+        )
+
+    @patch("aiperf.cli_runner._run_single_benchmark")
+    def test_no_warning_when_using_dashboard_ui_with_single_run(
+        self,
+        mock_single: Mock,
+        user_config_single_run: UserConfig,
+        service_config: ServiceConfig,
+        caplog: pytest.LogCaptureFixture,
+    ):
+        """Test that no warning is logged when using dashboard UI with single run."""
+        from aiperf.cli_runner import run_system_controller
+
+        # Set dashboard UI
+        service_config.ui_type = UIType.DASHBOARD
+
+        run_system_controller(user_config_single_run, service_config)
+
+        # Check that no dashboard warning was logged
+        assert not any(
+            "Dashboard UI does not show live updates" in record.message
+            for record in caplog.records
+        )
 
 
 class TestRunSingleBenchmark:
@@ -187,13 +255,13 @@ class TestRunMultiBenchmark:
         mock_aggregation.aggregate.return_value = mock_aggregate_result
         mock_aggregation_cls.return_value = mock_aggregation
 
-        # Mock exporters
+        # Mock exporters with async export() method
         mock_json_exporter = MagicMock()
-        mock_json_exporter.export_sync.return_value = tmp_path / "aggregate.json"
+        mock_json_exporter.export = AsyncMock(return_value=tmp_path / "aggregate.json")
         mock_json_exporter_cls.return_value = mock_json_exporter
 
         mock_csv_exporter = MagicMock()
-        mock_csv_exporter.export_sync.return_value = tmp_path / "aggregate.csv"
+        mock_csv_exporter.export = AsyncMock(return_value=tmp_path / "aggregate.csv")
         mock_csv_exporter_cls.return_value = mock_csv_exporter
 
         _run_multi_benchmark(user_config_multi, service_config)
@@ -219,8 +287,8 @@ class TestRunMultiBenchmark:
         mock_aggregation.aggregate.assert_called_once()
 
         # Verify exporters were called
-        mock_json_exporter.export_sync.assert_called_once()
-        mock_csv_exporter.export_sync.assert_called_once()
+        mock_json_exporter.export.assert_called_once()
+        mock_csv_exporter.export.assert_called_once()
 
     @patch("aiperf.orchestrator.strategies.FixedTrialsStrategy")
     @patch("aiperf.orchestrator.orchestrator.MultiRunOrchestrator")

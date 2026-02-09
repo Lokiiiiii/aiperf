@@ -2,6 +2,7 @@
 # SPDX-License-Identifier: Apache-2.0
 
 import contextlib
+import sys
 from typing import TYPE_CHECKING
 
 from aiperf.cli_utils import raise_startup_error_and_exit
@@ -258,16 +259,12 @@ def _run_multi_benchmark(
             "Only 1 successful run - cannot compute confidence statistics. "
             "At least 2 successful runs are required."
         )
-        import sys
-
         sys.exit(1)
     else:
         logger.error(
             "All runs failed - cannot compute aggregate statistics. "
             "Please check the error messages above."
         )
-        import sys
-
         sys.exit(1)
 
 

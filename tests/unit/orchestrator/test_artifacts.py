@@ -16,7 +16,7 @@ from aiperf.orchestrator.aggregation.confidence import ConfidenceMetric
 class TestAggregateExporters:
     """Tests for aggregate exporters."""
 
-    def test_write_aggregate_json(self, tmp_path):
+    async def test_write_aggregate_json(self, tmp_path):
         """Test writing aggregate result to JSON."""
         # Create a simple aggregate result
         aggregate = AggregateResult(
@@ -45,7 +45,7 @@ class TestAggregateExporters:
         output_dir = tmp_path / "aggregate"
         config = AggregateExporterConfig(result=aggregate, output_dir=output_dir)
         exporter = AggregateConfidenceJsonExporter(config)
-        json_path = exporter.export_sync()
+        json_path = await exporter.export()
 
         # Verify file exists
         assert json_path.exists()
@@ -83,7 +83,7 @@ class TestAggregateExporters:
         assert data["metrics"]["ttft_avg"]["ci_high"] == 111.5
         assert data["metrics"]["ttft_avg"]["t_critical"] == 2.262
 
-    def test_write_aggregate_csv(self, tmp_path):
+    async def test_write_aggregate_csv(self, tmp_path):
         """Test writing aggregate result to CSV."""
         # Create aggregate result with multiple metrics
         aggregate = AggregateResult(
@@ -124,7 +124,7 @@ class TestAggregateExporters:
         output_dir = tmp_path / "aggregate"
         config = AggregateExporterConfig(result=aggregate, output_dir=output_dir)
         exporter = AggregateConfidenceCsvExporter(config)
-        csv_path = exporter.export_sync()
+        csv_path = await exporter.export()
 
         # Verify file exists
         assert csv_path.exists()
@@ -145,7 +145,7 @@ class TestAggregateExporters:
         assert "105.00" in content  # ttft mean
         assert "11.00" in content  # tpot mean
 
-    def test_write_creates_directory(self, tmp_path):
+    async def test_write_creates_directory(self, tmp_path):
         """Test that write methods create output directory if it doesn't exist."""
         aggregate = AggregateResult(
             aggregation_type="confidence",
@@ -176,7 +176,7 @@ class TestAggregateExporters:
         # Write should create directory
         config = AggregateExporterConfig(result=aggregate, output_dir=output_dir)
         exporter = AggregateConfidenceJsonExporter(config)
-        json_path = exporter.export_sync()
+        json_path = await exporter.export()
 
         assert output_dir.exists()
         assert output_dir.is_dir()

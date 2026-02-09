@@ -106,13 +106,3 @@ class AggregateBaseExporter(AIPerfLoggerMixin, ABC):
         except Exception as e:
             self.error(f"Failed to export to {file_path}: {e}")
             raise
-
-    def export_sync(self) -> Path:
-        """Synchronous version of export() for convenience.
-
-        Returns:
-            Path: Path to written file
-        """
-        import asyncio
-
-        return asyncio.run(self.export())

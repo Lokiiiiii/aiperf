@@ -24,6 +24,9 @@ from aiperf.orchestrator.strategies import (
     ExecutionStrategy,
     FixedTrialsStrategy,
 )
+from aiperf.orchestrator.subprocess_runner import (
+    main,
+)
 
 __all__ = [
     "AggregateResult",
@@ -36,4 +39,5 @@ __all__ = [
     "RunConfig",
     "RunResult",
     "logger",
+    "main",
 ]

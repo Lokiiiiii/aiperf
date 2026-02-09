@@ -23,7 +23,7 @@ def main() -> None:
     4. SystemController calls os._exit() at the end, terminating this subprocess
 
     Usage:
-        python -m aiperf.orchestrator._subprocess_runner /path/to/config.json
+        python -m aiperf.orchestrator.subprocess_runner /path/to/config.json
 
     Exit codes:
         0: Benchmark completed successfully
@@ -32,7 +32,7 @@ def main() -> None:
     """
     if len(sys.argv) != 2:
         print(
-            "Usage: python -m aiperf.orchestrator._subprocess_runner <config.json>",
+            "Usage: python -m aiperf.orchestrator.subprocess_runner <config.json>",
             file=sys.stderr,
         )
         sys.exit(1)

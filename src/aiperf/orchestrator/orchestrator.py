@@ -162,7 +162,7 @@ class MultiRunOrchestrator:
                     sys.executable,
                     "-u",  # Unbuffered output - critical for live dashboard rendering
                     "-m",
-                    "aiperf.orchestrator._subprocess_runner",
+                    "aiperf.orchestrator.subprocess_runner",
                     str(config_file),
                 ],
                 stdin=sys.stdin,  # Pass through stdin so Textual can detect interactive TTY

@@ -12,7 +12,7 @@ SPDX-License-Identifier: Apache-2.0
 [![Ask DeepWiki](https://deepwiki.com/badge.svg)](https://deepwiki.com/ai-dynamo/aiperf)
 
 
-**[Architecture](docs/architecture.md)** | **[Design Proposals](https://github.com/ai-dynamo/enhancements)** | **[Migrating from Genai-Perf](docs/migrating.md)** | **[CLI Options](docs/cli_options.md)** | **[Metrics Reference](docs/metrics_reference.md)**
+**[Comprehensive Guide](docs/comprehensive-llm-benchmarking.md)** |**[Architecture](docs/architecture.md)** | **[Design Proposals](https://github.com/ai-dynamo/enhancements)** | **[Migrating from Genai-Perf](docs/migrating.md)** | **[CLI Options](docs/cli_options.md)** | **[Metrics Reference](docs/metrics_reference.md)**
 
 
 AIPerf is a comprehensive benchmarking tool that measures the performance of generative AI models served by your preferred inference solution.
@@ -33,7 +33,7 @@ Features
 
 - Scalable via multiprocess support
 - Modular design for easy user modification
-- **3 UI types**: `--ui-type dashboard` (default, real-time TUI), `--ui-type simple` (progress bars), `--ui-type none` (no UI). See [CLI Options](docs/cli_options.md) for details.
+- **3 UI types**: `--ui-type dashboard` (default in TTY, real-time TUI), `--ui-type simple` (progress bars), `--ui-type none` (default in non-TTY). Automatically detects interactive terminals. See [CLI Options](docs/cli_options.md) or [User Interface](docs/tutorials/ui-types.md) for details.
 - Several benchmarking modes:
   - concurrency
   - request-rate
@@ -47,6 +47,7 @@ Features
 
 ### Getting Started
 - **[Basic Tutorial](docs/tutorial.md)** - Learn the fundamentals with Dynamo and vLLM examples
+- **[Comprehensive Benchmarking Guide](docs/comprehensive-llm-benchmarking.md)** - In-depth walkthrough with 5 real-world use cases, Pareto analysis, trace replay, goodput, and time-sliced analysis
 - **[User Interface](docs/tutorials/ui-types.md)** - Choose between dashboard, simple, or none for displaying progress
 
 ### Load Control & Timing
@@ -270,6 +271,15 @@ Metrics measuring differences between API-reported and client-computed token cou
 | [**Usage Completion Tokens Diff %**](docs/metrics_reference.md#usage-completion-tokens-diff-) | `usage_completion_tokens_diff_pct` | `abs((usage_completion_tokens - output_sequence_length) / output_sequence_length) * 100` | `%` |
 | [**Usage Reasoning Tokens Diff %**](docs/metrics_reference.md#usage-reasoning-tokens-diff-) | `usage_reasoning_tokens_diff_pct` | `abs((usage_reasoning_tokens - reasoning_token_count) / reasoning_token_count) * 100` | `%` |
 | [**Usage Discrepancy Count**](docs/metrics_reference.md#usage-discrepancy-count) | `usage_discrepancy_count` | `sum(1 for r in records if r.any_diff > threshold)` | `requests` |
+
+### OSL Mismatch Metrics
+
+Metrics measuring differences between requested `max_tokens` and actual output length. Negative diff = stopped early (EOS), positive diff = over-generated.
+
+| Metric | Tag | Formula | Unit |
+|--------|-----|---------|------|
+| [**OSL Mismatch Diff %**](docs/metrics_reference.md#osl-mismatch-diff-) | `osl_mismatch_diff_pct` | `((actual_osl - requested_osl) / requested_osl) * 100` | `%` |
+| [**OSL Mismatch Count**](docs/metrics_reference.md#osl-mismatch-count) | `osl_mismatch_count` | `sum(1 for r if abs(actual - requested) > min(requested * pct / 100, token_cap))` | `requests` |
 
 ### Goodput Metrics
 

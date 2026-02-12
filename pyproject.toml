@@ -6,15 +6,12 @@
 requires = ["hatchling"]
 build-backend = "hatchling.build"
 
-[tool.hatch.version]
-path = "src/aiperf/__init__.py"
-
 [tool.hatch.metadata]
 allow-direct-references = true
 
 [project]
 name = "aiperf"
-version = "0.5.0"
+version = "0.6.0"
 description = "AIPerf is a package for performance testing of AI models"
 readme = "README.md"
 license = {text = "Apache-2.0"}
@@ -29,13 +26,15 @@ dependencies = [
   "aiohttp~=3.13.3",
   "cyclopts>=4,<5",
   "ffmpeg-python~=0.2.0",
+  "huggingface-hub>=0.34.0,<2.0",
   "jinja2~=3.1.5",  # NOTE: Versions prior to 3.1.5 have vuln exploits
   "jmespath~=1.0.1",
   "billiard>=4.2.0",
   "kaleido~=1.2.0",
   "matplotlib>=3.10.0",
   "msgspec>=0.19.0,<1.0.0",
-  "numpy~=1.26.4",
+  "numpy>=1.26.4,<3",
+  "nvidia-ml-py",  # Note: No version specified to be most compatible with CUDA version
   "orjson~=3.10.18",
   "pandas~=2.3.3",
   "pillow~=11.1.0",
@@ -72,13 +71,12 @@ dev = [
   "black>=25.1.0",
   "httpx>=0.27.0",
   "looptime>=0.5",
-  "mkinit>=1.1.0",
   "pre-commit>=4.2.0",
   "pytest-asyncio",
   "pytest-cov",
   "pytest>=7.0.0",
   "pytest-xdist>=3.8.0",
-  "ruff>=0.0.0",
+  "ruff>=0.14.0,<0.15.0",
   "scipy>=1.13.0",
   "trustme>=1.0.0",
 ]
@@ -87,7 +85,7 @@ dev = [
 # Base settings for ruff
 line-length = 88
 indent-width = 4
-exclude = ["__pycache__", "build", "dist", ".venv", "venv"]
+exclude = ["__pycache__", "build", "dist", ".venv", "venv", "notebooks/TCO_calculator.ipynb"]
 
 [tool.ruff.lint]
 select = [

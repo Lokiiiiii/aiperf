@@ -412,6 +412,27 @@ class TestGetEntry:
         """has_entry() returns correct boolean."""
         assert registry_with_types.has_entry(category, name) is expected
 
+    @pytest.mark.parametrize(
+        "lookup_name",
+        ["type_a", "type-a", "TYPE_A", "TYPE-A", "Type_A", "Type-A"],
+    )
+    def test_get_entry_normalizes_dashes_underscores(
+        self, registry_with_types: _PluginRegistry, lookup_name: str
+    ) -> None:
+        """get_entry() normalizes dashes/underscores and case."""
+        entry = registry_with_types.get_entry("test_category", lookup_name)
+        assert entry.name == "type_a"
+
+    @pytest.mark.parametrize(
+        "lookup_name",
+        ["type_a", "type-a", "TYPE_A", "TYPE-A"],
+    )
+    def test_has_entry_normalizes_dashes_underscores(
+        self, registry_with_types: _PluginRegistry, lookup_name: str
+    ) -> None:
+        """has_entry() normalizes dashes/underscores and case."""
+        assert registry_with_types.has_entry("test_category", lookup_name) is True
+
 
 # =============================================================================
 # Get Class Tests
@@ -633,14 +654,18 @@ class TestCreateEnum:
 
     def test_create_enum_basic(self, registry_with_types: _PluginRegistry) -> None:
         """create_enum() creates enum from registered types."""
-        enum_cls = registry_with_types.create_enum("test_category", "TestEnum")
+        enum_cls = registry_with_types.create_enum(
+            "test_category", "TestEnum", module=__name__
+        )
         assert issubclass(enum_cls, ExtensibleStrEnum)
         assert hasattr(enum_cls, "TYPE_A")
         assert hasattr(enum_cls, "TYPE_B")
 
     def test_create_enum_values(self, registry_with_types: _PluginRegistry) -> None:
         """create_enum() creates correct enum values."""
-        enum_cls = registry_with_types.create_enum("test_category", "TestEnum")
+        enum_cls = registry_with_types.create_enum(
+            "test_category", "TestEnum", module=__name__
+        )
         assert enum_cls.TYPE_A.value == "type_a"
         assert enum_cls.TYPE_B.value == "type_b"
 
@@ -649,13 +674,15 @@ class TestCreateEnum:
     ) -> None:
         """create_enum() raises KeyError for empty category."""
         with pytest.raises(KeyError, match="No types registered"):
-            registry_with_types.create_enum("nonexistent", "TestEnum")
+            registry_with_types.create_enum("nonexistent", "TestEnum", module=__name__)
 
     def test_create_enum_stores_category(
         self, registry_with_types: _PluginRegistry
     ) -> None:
         """create_enum() stores plugin category on enum."""
-        enum_cls = registry_with_types.create_enum("test_category", "TestEnum")
+        enum_cls = registry_with_types.create_enum(
+            "test_category", "TestEnum", module=__name__
+        )
         assert enum_cls._plugin_category_ == "test_category"
 
 

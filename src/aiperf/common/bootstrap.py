@@ -72,13 +72,13 @@ def bootstrap_and_run_service(
 
     # Load the service configuration
     if service_config is None:
-        from aiperf.common.config import load_service_config
+        from aiperf.common.config.loader import load_service_config
 
         service_config = load_service_config()
 
     # Load the user configuration
     if user_config is None:
-        from aiperf.common.config import load_user_config
+        from aiperf.common.config.loader import load_user_config
 
         # TODO: Add support for loading user config from a file/environment variables
         user_config = load_user_config()
@@ -132,7 +132,7 @@ def bootstrap_and_run_service(
         if platform.system() == "Darwin":
             # Only close terminal FDs if we're in a spawned child process
             # The main process name is typically "MainProcess", child processes have other names
-            is_child_process = multiprocessing.current_process().name != "MainProcess"
+            is_child_process = multiprocessing.parent_process() is not None
 
             if is_child_process:
                 try:

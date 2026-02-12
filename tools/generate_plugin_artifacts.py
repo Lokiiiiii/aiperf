@@ -145,7 +145,7 @@ def generate_schemas(check: bool = False) -> int:
     categories = load_categories()
 
     try:
-        from aiperf.plugin.schema import (
+        from aiperf.plugin.schema.schemas import (
             CategoriesManifest,
             CategorySpec,
             PluginsManifest,
@@ -280,7 +280,7 @@ def generate_enums_py() -> str:
         '    PluginType = create_enum("PluginType", {',
         '        category.replace("-", "_").upper(): category',
         "        for category in _all_plugin_categories",
-        "    })",
+        "    }, module=__name__)",
         "    PluginTypeStr: TypeAlias = str",
         "",
     ]
@@ -293,7 +293,7 @@ def generate_enums_py() -> str:
         lines.extend(
             [
                 f"{enum_name}Str: TypeAlias = str",
-                f'{enum_name} = plugins.create_enum(PluginType.{member}, "{enum_name}")',
+                f'{enum_name} = plugins.create_enum(PluginType.{member}, "{enum_name}", module=__name__)',
                 f'"""Dynamic enum for {name.replace("_", " ")}. Example: {examples}"""',
                 "",
             ]
@@ -543,7 +543,7 @@ def validate_plugins(verbose: bool = False) -> tuple[int, int, int, float]:
     def check_cat_schema() -> list[str]:
         from pydantic import ValidationError
 
-        from aiperf.plugin.schema import CategoriesManifest
+        from aiperf.plugin.schema.schemas import CategoriesManifest
 
         try:
             CategoriesManifest.model_validate(categories)
@@ -557,7 +557,7 @@ def validate_plugins(verbose: bool = False) -> tuple[int, int, int, float]:
     def check_plug_schema() -> list[str]:
         from pydantic import ValidationError
 
-        from aiperf.plugin.schema import PluginsManifest
+        from aiperf.plugin.schema.schemas import PluginsManifest
 
         try:
             PluginsManifest.model_validate(plugins_data)

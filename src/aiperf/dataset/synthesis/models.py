@@ -27,6 +27,9 @@ class AnalysisStats(AIPerfBaseModel):
 
     total_requests: int = Field(description="Total number of requests in trace")
     unique_prefixes: int = Field(description="Number of unique prefix patterns")
+    num_prefix_groups: int = Field(
+        description="Number of distinct shared first blocks (prefix groups)"
+    )
     cache_hit_rate: float = Field(
         description="Theoretical cache hit rate (0.0 to 1.0) assuming infinite cache"
     )
@@ -81,6 +84,12 @@ class SynthesisParams(AIPerfBaseModel):
     )
     block_size: int = Field(
         default=InputTokensDefaults.BLOCK_SIZE, ge=1, description="KV cache page size"
+    )
+    # Only used for round-trip testing. Typically leave False as rehashing is
+    # expensive and unnecessary - the output hash_ids are already valid.
+    renormalize_hash_ids: bool = Field(
+        default=False,
+        description="Whether to apply rolling hash renormalization to output hash_ids",
     )
 
     @classmethod

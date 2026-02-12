@@ -33,7 +33,7 @@ Examples:
 
 import platform
 from pathlib import Path
-from typing import Annotated
+from typing import Annotated, Literal
 
 from pydantic import BeforeValidator, Field, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -184,6 +184,11 @@ class _HTTPSettings(BaseSettings):
     Controls low-level socket options, keepalive settings, DNS caching, and connection
     pooling for HTTP clients. These settings optimize performance for high-throughput
     streaming workloads.
+
+    Video Generation Polling:
+        For async video generation APIs that use job polling (e.g., SGLang /v1/videos),
+        the poll interval is controlled by AIPERF_HTTP_VIDEO_POLL_INTERVAL. The max poll time uses
+        the --request-timeout-seconds CLI argument.
     """
 
     model_config = SettingsConfigDict(
@@ -279,6 +284,25 @@ class _HTTPSettings(BaseSettings):
         "when request cancellation is enabled. Used as fallback when no explicit timeout is configured "
         "to prevent hanging indefinitely while waiting for the request to be written to the socket.",
     )
+    IP_VERSION: Literal["4", "6", "auto"] = Field(
+        default="4",
+        description="IP version for HTTP socket connections. "
+        "Options: '4' (AF_INET, default), '6' (AF_INET6), or 'auto' (AF_UNSPEC, system chooses).",
+    )
+    TRUST_ENV: bool = Field(
+        default=False,
+        description="Trust environment variables for HTTP client configuration. "
+        "When enabled, aiohttp will read proxy settings from HTTP_PROXY, HTTPS_PROXY, "
+        "and NO_PROXY environment variables.",
+    )
+    VIDEO_POLL_INTERVAL: float = Field(
+        ge=0.001,
+        le=10.0,
+        default=0.1,
+        description="Interval in seconds between status polls for async video generation jobs. "
+        "Lower values provide faster completion detection but increase server load. "
+        "Applies to the aiohttp transport.",
+    )
 
 
 class _LoggingSettings(BaseSettings):
@@ -320,6 +344,17 @@ class _MetricsSettings(BaseSettings):
         le=100.0,
         default=10.0,
         description="Percentage difference threshold for flagging discrepancies between API usage and client token counts (default: 10%)",
+    )
+    OSL_MISMATCH_PCT_THRESHOLD: float = Field(
+        ge=0.0,
+        le=100.0,
+        default=5.0,
+        description="Percentage difference threshold for flagging discrepancies between requested and actual output sequence length (default: 5%)",
+    )
+    OSL_MISMATCH_MAX_TOKEN_THRESHOLD: int = Field(
+        ge=1,
+        default=50,
+        description="Maximum absolute token threshold for OSL mismatch. The effective threshold is min(requested_osl * pct_threshold, this value). Makes threshold tighter for large OSL values (default: 50 tokens)",
     )
 
 
@@ -555,6 +590,28 @@ class _ServiceSettings(BaseSettings):
         default=10.0,
         description="Warning threshold in milliseconds for event loop latency (default: 10ms). "
         "If the actual sleep duration exceeds the expected duration by this amount, a warning is logged.",
+    )
+    # Health server settings for Kubernetes probes
+    HEALTH_ENABLED: bool = Field(
+        default=False,
+        description="Enable the lightweight health server for Kubernetes liveness/readiness probes. "
+        "When enabled, non-API services will start an HTTP server serving /healthz and /readyz endpoints.",
+    )
+    HEALTH_HOST: str = Field(
+        default="127.0.0.1",
+        description="Host to bind the health server to. Use '0.0.0.0' for Kubernetes deployments.",
+    )
+    HEALTH_PORT: int = Field(
+        ge=1,
+        le=65535,
+        default=8080,
+        description="Port for the health server HTTP endpoints (/healthz, /readyz).",
+    )
+    HEALTH_REQUEST_TIMEOUT: float = Field(
+        ge=0.1,
+        le=60.0,
+        default=5.0,
+        description="Timeout in seconds for reading health check HTTP requests.",
     )
 
     @model_validator(mode="after")

@@ -57,29 +57,23 @@ class TestRunSystemController:
 
         mock_multi.assert_called_once_with(user_config_multi_run, service_config)
 
-    @patch("aiperf.cli_runner._run_multi_benchmark")
-    def test_warns_when_using_dashboard_ui_with_multi_run(
+    def test_raises_error_when_using_dashboard_ui_with_multi_run(
         self,
-        mock_multi: Mock,
         user_config_multi_run: UserConfig,
         service_config: ServiceConfig,
-        caplog: pytest.LogCaptureFixture,
     ):
-        """Test that a warning is logged when using dashboard UI with multi-run."""
-        from aiperf.cli_runner import run_system_controller
+        """Test that an error is raised when explicitly using dashboard UI with multi-run."""
+        from aiperf.cli_runner import _run_multi_benchmark
 
-        # Set dashboard UI
+        # Set dashboard UI explicitly (simulate user setting it)
         service_config.ui_type = UIType.DASHBOARD
+        service_config.model_fields_set.add("ui_type")
 
-        run_system_controller(user_config_multi_run, service_config)
-
-        # Check that warning was logged
-        assert any(
-            "Dashboard UI does not show live updates in multi-run mode"
-            in record.message
-            for record in caplog.records
-        )
-        assert any(record.levelname == "WARNING" for record in caplog.records)
+        # Should raise ValueError when _run_multi_benchmark is called
+        with pytest.raises(
+            ValueError, match="Dashboard UI is not supported with multi-run mode"
+        ):
+            _run_multi_benchmark(user_config_multi_run, service_config)
 
     @patch("aiperf.cli_runner._run_multi_benchmark")
     def test_no_warning_when_using_simple_ui_with_multi_run(
@@ -422,8 +416,9 @@ class TestPrintAggregateSummary:
         mock_metric.ci_high = 103.0
         mock_metric.unit = "req/s"
 
+        # Use actual flattened metric keys that match the aggregation output
         result.metrics = {
-            "request_throughput": mock_metric,
+            "request_throughput_avg": mock_metric,
             "time_to_first_token_avg": mock_metric,
         }
         return result
@@ -484,7 +479,8 @@ class TestPrintAggregateSummary:
         # Verify metrics were printed
         info_calls = [call[0][0] for call in mock_logger.info.call_args_list]
 
-        assert any("Request Throughput:" in call for call in info_calls)
+        # Check for the dynamic display name format (e.g., "Request Throughput (Avg)")
+        assert any("Request Throughput" in call for call in info_calls)
         assert any("Mean:" in call and "100.5000" in call for call in info_calls)
         assert any("Std Dev:" in call and "5.2000" in call for call in info_calls)
         assert any("CV:" in call and "5.20%" in call for call in info_calls)

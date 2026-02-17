@@ -212,9 +212,28 @@ class MultiRunOrchestrator:
                 )
 
             # Check if any requests completed successfully
+            # request_count only counts valid (successful) requests
+            # error_request_count counts failed requests
+            # If error_request_count > 0 but request_count is missing or 0, all requests failed
             request_count_metric = summary_metrics.get("request_count")
-            if request_count_metric and request_count_metric.avg == 0:
-                error_msg = "No successful requests completed"
+            error_request_count_metric = summary_metrics.get("error_request_count")
+
+            # If no request_count metric exists or it's 0, check if there were any errors
+            if not request_count_metric or request_count_metric.avg == 0:
+                # If there were error requests, all requests failed
+                if error_request_count_metric and error_request_count_metric.avg > 0:
+                    error_msg = (
+                        f"All {int(error_request_count_metric.avg)} requests failed"
+                    )
+                    logger.error(error_msg)
+                    return RunResult(
+                        label=label,
+                        success=False,
+                        error=error_msg,
+                        artifacts_path=artifacts_path,
+                    )
+                # If no errors either, no requests were made at all
+                error_msg = "No requests completed"
                 logger.error(error_msg)
                 return RunResult(
                     label=label,

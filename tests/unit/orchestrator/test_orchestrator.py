@@ -304,7 +304,7 @@ class TestMultiRunOrchestrator:
             result = orchestrator._execute_single_run(mock_user_config, strategy, 0)
 
         assert result.success is False
-        assert "No successful requests completed" in result.error
+        assert "No requests completed" in result.error
 
     def test_execute_single_run_exception(
         self, mock_service_config, mock_user_config, tmp_path

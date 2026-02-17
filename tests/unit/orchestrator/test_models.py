@@ -5,6 +5,7 @@
 from pathlib import Path
 
 from aiperf.common.config import EndpointConfig, UserConfig
+from aiperf.common.models.export_models import JsonMetricResult
 from aiperf.orchestrator.models import RunConfig, RunResult
 
 
@@ -38,13 +39,19 @@ class TestRunResult:
         result = RunResult(
             label="run_0001",
             success=True,
-            summary_metrics={"ttft_avg": 100.0, "tpot_avg": 10.0},
+            summary_metrics={
+                "ttft": JsonMetricResult(unit="ms", avg=100.0),
+                "tpot": JsonMetricResult(unit="ms", avg=10.0),
+            },
             artifacts_path=Path("/tmp/run_0001"),
         )
 
         assert result.label == "run_0001"
         assert result.success is True
-        assert result.summary_metrics == {"ttft_avg": 100.0, "tpot_avg": 10.0}
+        assert result.summary_metrics["ttft"].avg == 100.0
+        assert result.summary_metrics["ttft"].unit == "ms"
+        assert result.summary_metrics["tpot"].avg == 10.0
+        assert result.summary_metrics["tpot"].unit == "ms"
         assert result.artifacts_path == Path("/tmp/run_0001")
         assert result.error is None
 

@@ -8,35 +8,32 @@ from typing import Any
 from pydantic import BaseModel, Field
 
 from aiperf.common.config import UserConfig
+from aiperf.common.models.export_models import JsonMetricResult
 
 
 class RunConfig(BaseModel):
-    """Configuration for a single benchmark run.
+    """Configuration for a single benchmark run."""
 
-    Attributes:
-        config: The benchmark configuration to execute
-        label: Human-readable label for this run (e.g., "run_0001")
-        metadata: Additional metadata about this run (e.g., trial number, parameter values)
-    """
-
-    config: UserConfig
-    label: str
-    metadata: dict[str, Any] = Field(default_factory=dict)
+    config: UserConfig = Field(description="The benchmark configuration to execute")
+    label: str = Field(
+        description="Human-readable label for this run (e.g., 'run_0001')"
+    )
+    metadata: dict[str, Any] = Field(
+        default_factory=dict,
+        description="Additional metadata about this run (e.g., trial number, parameter values)",
+    )
 
 
 class RunResult(BaseModel):
-    """Result from executing a single benchmark run.
+    """Result from executing a single benchmark run."""
 
-    Attributes:
-        label: Label identifying this run
-        success: Whether the run completed successfully
-        summary_metrics: Run-level summary statistics (e.g., {"ttft_p99_ms": 152.7})
-        error: Error message if run failed
-        artifacts_path: Path to run artifacts directory
-    """
-
-    label: str
-    success: bool
-    summary_metrics: dict[str, float] = Field(default_factory=dict)
-    error: str | None = None
-    artifacts_path: Path | None = None
+    label: str = Field(description="Label identifying this run")
+    success: bool = Field(description="Whether the run completed successfully")
+    summary_metrics: dict[str, JsonMetricResult] = Field(
+        default_factory=dict,
+        description="Run-level summary statistics (e.g., {'time_to_first_token': JsonMetricResult(unit='ms', avg=150, p99=195)})",
+    )
+    error: str | None = Field(default=None, description="Error message if run failed")
+    artifacts_path: Path | None = Field(
+        default=None, description="Path to run artifacts directory"
+    )

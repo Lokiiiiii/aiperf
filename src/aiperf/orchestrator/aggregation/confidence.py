@@ -155,42 +155,74 @@ class ConfidenceAggregation(AggregationStrategy):
             results: List of successful RunResult
 
         Returns:
-            Dict mapping metric name to ConfidenceMetric
+            Dict mapping flattened metric name to ConfidenceMetric
+            (e.g., "time_to_first_token_avg", "time_to_first_token_p99")
         """
         # Get all metric names from first result
         if not results or not results[0].summary_metrics:
             return {}
 
-        metric_names = results[0].summary_metrics.keys()
+        # Collect all unique metric names and stat keys across all runs
+        metric_stat_pairs = set()
+        for result in results:
+            for metric_name, metric_result in result.summary_metrics.items():
+                # Get all populated stat fields
+                for stat_key in [
+                    "avg",
+                    "p1",
+                    "p5",
+                    "p10",
+                    "p25",
+                    "p50",
+                    "p75",
+                    "p90",
+                    "p95",
+                    "p99",
+                    "min",
+                    "max",
+                    "std",
+                ]:
+                    if getattr(metric_result, stat_key, None) is not None:
+                        metric_stat_pairs.add((metric_name, stat_key))
 
         aggregated = {}
-        for metric_name in metric_names:
-            # Extract values for this metric across all runs
-            values = [
-                r.summary_metrics[metric_name]
-                for r in results
-                if metric_name in r.summary_metrics
-            ]
+        for metric_name, stat_key in metric_stat_pairs:
+            # Extract values for this metric+stat combination across all runs
+            values = []
+            unit = ""
+
+            for result in results:
+                if metric_name in result.summary_metrics:
+                    metric_result = result.summary_metrics[metric_name]
+                    value = getattr(metric_result, stat_key, None)
+                    if value is not None:
+                        values.append(value)
+                        # Get unit from first occurrence
+                        if not unit:
+                            unit = metric_result.unit
 
             if not values:
-                logger.warning(f"Metric {metric_name} not found in any run")
                 continue
 
+            # Create flattened key for output (e.g., "time_to_first_token_p99")
+            flattened_key = f"{metric_name}_{stat_key}"
+
             # Compute statistics
-            aggregated[metric_name] = self._compute_confidence_stats(
-                values, metric_name
+            aggregated[flattened_key] = self._compute_confidence_stats(
+                values, flattened_key, unit
             )
 
         return aggregated
 
     def _compute_confidence_stats(
-        self, values: list[float], metric_name: str
+        self, values: list[float], metric_name: str, unit: str
     ) -> ConfidenceMetric:
         """Compute confidence statistics for a single metric.
 
         Args:
             values: List of metric values across runs
             metric_name: Name of the metric (e.g., "time_to_first_token_avg")
+            unit: Unit of measurement (e.g., "ms", "requests/sec")
 
         Returns:
             ConfidenceMetric with computed statistics
@@ -215,9 +247,6 @@ class ConfidenceAggregation(AggregationStrategy):
         ci_low = mean - margin
         ci_high = mean + margin
 
-        # Get unit from metric definition
-        unit = self._get_metric_unit(metric_name)
-
         return ConfidenceMetric(
             mean=mean,
             std=std,
@@ -230,56 +259,3 @@ class ConfidenceAggregation(AggregationStrategy):
             t_critical=t_critical,
             unit=unit,
         )
-
-    def _get_metric_unit(self, metric_name: str) -> str:
-        """Get unit from metric definition in MetricRegistry.
-
-        Extracts the metric tag from the full metric name (e.g., "time_to_first_token_avg"
-        → "time_to_first_token") and looks up the display unit from the MetricRegistry.
-
-        Args:
-            metric_name: Full metric name with statistical suffix (e.g., "time_to_first_token_avg")
-
-        Returns:
-            Unit string from metric definition (e.g., "ms", "requests/sec")
-            Returns empty string if metric not found in registry.
-        """
-        from aiperf.metrics.metric_registry import MetricRegistry
-
-        # Extract metric tag by removing statistical suffix (_avg, _p50, _p90, etc.)
-        # Common suffixes: _avg, _min, _max, _std, _p50, _p90, _p95, _p99, _count
-        stat_suffixes = [
-            "_avg",
-            "_min",
-            "_max",
-            "_std",
-            "_p50",
-            "_p90",
-            "_p95",
-            "_p99",
-            "_count",
-        ]
-
-        metric_tag = metric_name
-        for suffix in stat_suffixes:
-            if metric_name.endswith(suffix):
-                metric_tag = metric_name[: -len(suffix)]
-                break
-
-        try:
-            # Get metric instance from registry
-            metric = MetricRegistry.get_instance(metric_tag)
-
-            # Use display_unit if available, otherwise use base unit
-            unit = metric.display_unit if metric.display_unit else metric.unit
-
-            # Convert unit enum to string if needed
-            return str(unit) if unit else ""
-
-        except Exception:
-            # Metric not found in registry - log warning and return empty string
-            logger.warning(
-                f"Metric '{metric_tag}' not found in MetricRegistry. "
-                f"Cannot determine unit for '{metric_name}'. Using empty string."
-            )
-            return ""

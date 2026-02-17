@@ -744,7 +744,7 @@ Cooldown duration in seconds between profile runs. Only applies when --num-profi
 
 #### `--confidence-level` `<float>`
 
-Confidence level for computing confidence intervals (0-1). Only applies when --num-profile-runs > 1. Common values: 0.90 (90%%), 0.95 (95%%, default), 0.99 (99%%). Higher values produce wider confidence intervals.
+Confidence level for computing confidence intervals (0-1). Only applies when --num-profile-runs > 1. Common values: 0.90 (90%), 0.95 (95%, default), 0.99 (99%). Higher values produce wider confidence intervals.
 <br>_Constraints: > 0, < 1_
 <br>_Default: `0.95`_
 

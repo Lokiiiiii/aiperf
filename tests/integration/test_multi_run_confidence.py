@@ -390,6 +390,7 @@ class TestMultiRunConfidence:
                 --ui {defaults.ui}
             """,
             timeout=300.0,
+            assert_success=False,  # Allow non-zero exit if some runs fail
         )
 
         # Even if some runs fail, the command should complete

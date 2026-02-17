@@ -7,12 +7,16 @@ import subprocess
 import sys
 import time
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 import orjson
 
 from aiperf.common.config import ServiceConfig, UserConfig
 from aiperf.orchestrator.models import RunResult
 from aiperf.orchestrator.strategies import ExecutionStrategy
+
+if TYPE_CHECKING:
+    from aiperf.common.models.export_models import JsonMetricResult
 
 logger = logging.getLogger(__name__)
 
@@ -124,6 +128,11 @@ class MultiRunOrchestrator:
         Returns:
             RunResult with success status and metrics or error
         """
+        # Initialize label and artifacts_path BEFORE try block to ensure they're always defined
+        # This prevents UnboundLocalError in the except block if any operation fails
+        label = None
+        artifacts_path = None
+
         try:
             # Strategy determines artifact path and label
             artifacts_path = strategy.get_run_path(self.base_dir, run_index)
@@ -203,8 +212,8 @@ class MultiRunOrchestrator:
                 )
 
             # Check if any requests completed successfully
-            request_count = summary_metrics.get("request_count_avg", 0)
-            if request_count == 0:
+            request_count_metric = summary_metrics.get("request_count")
+            if request_count_metric and request_count_metric.avg == 0:
                 error_msg = "No successful requests completed"
                 logger.error(error_msg)
                 return RunResult(
@@ -221,30 +230,32 @@ class MultiRunOrchestrator:
                 artifacts_path=artifacts_path,
             )
         except Exception as e:
-            logger.exception(f"Error executing run {label}")
+            # Use safe values for label and artifacts_path in case they weren't set
+            safe_label = label if label is not None else f"run_{run_index:04d}"
+            logger.exception(f"Error executing run {safe_label}")
             return RunResult(
-                label=label,
+                label=safe_label,
                 success=False,
                 error=str(e),
-                artifacts_path=artifacts_path if "artifacts_path" in locals() else None,
+                artifacts_path=artifacts_path,
             )
 
-    def _extract_summary_metrics(self, artifacts_path: Path) -> dict[str, float]:
+    def _extract_summary_metrics(
+        self, artifacts_path: Path
+    ) -> dict[str, "JsonMetricResult"]:
         """Extract run-level summary statistics from artifacts.
 
         Reads the profile_export_aiperf.json file written by the SystemController
-        and extracts the summary metrics using Pydantic deserialization.
-
-        This method dynamically discovers all metrics in the export file without
-        hardcoding metric names or statistical keys, making it robust to future
-        additions of new metrics.
+        and extracts the summary metrics, preserving the full structure with units.
 
         Args:
             artifacts_path: Path to run artifacts directory
 
         Returns:
-            Dict mapping metric name to value (e.g., {"time_to_first_token_p99": 152.7})
+            Dict mapping metric name to JsonMetricResult (e.g., {"time_to_first_token": JsonMetricResult(unit="ms", avg=150, p99=195)})
         """
+        from aiperf.common.models.export_models import JsonMetricResult
+
         # Read the profile export JSON file
         json_file = artifacts_path / "profile_export_aiperf.json"
 
@@ -253,33 +264,22 @@ class MultiRunOrchestrator:
             return {}
 
         try:
-            # Load JSON as dict directly for efficient iteration
+            # Load JSON as dict directly
             with open(json_file, "rb") as f:
                 data = orjson.loads(f.read())
 
-            # Extract metrics dynamically by iterating over all fields
-            # The export data uses extra="allow", so it can have additional metrics
-            # beyond what's explicitly defined in the model
+            # Extract metrics - keep the structure intact, don't flatten
             metrics = {}
 
-            # Iterate over all fields in the data
             for field_name, field_value in data.items():
                 # Check if this field is a metric (has the metric structure with "unit")
                 if isinstance(field_value, dict) and "unit" in field_value:
-                    # This is a metric - extract all statistical values
-                    for stat_key, stat_value in field_value.items():
-                        # Skip non-numeric fields (like "unit")
-                        if stat_key != "unit" and stat_value is not None:
-                            # Create metric name like "time_to_first_token_p99"
-                            full_metric_name = f"{field_name}_{stat_key}"
-                            try:
-                                metrics[full_metric_name] = float(stat_value)
-                            except (ValueError, TypeError):
-                                # Skip non-numeric values (e.g., strings, objects)
-                                logger.debug(
-                                    f"Skipping non-numeric field {full_metric_name}: {stat_value}"
-                                )
-                                continue
+                    try:
+                        # Parse as JsonMetricResult to preserve full structure
+                        metrics[field_name] = JsonMetricResult(**field_value)
+                    except Exception as e:
+                        logger.debug(f"Skipping field {field_name}: {e}")
+                        continue
 
             return metrics
 

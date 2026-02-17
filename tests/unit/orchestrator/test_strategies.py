@@ -7,6 +7,7 @@ from pathlib import Path
 import pytest
 
 from aiperf.common.config import EndpointConfig, UserConfig
+from aiperf.common.models.export_models import JsonMetricResult
 from aiperf.orchestrator.models import RunResult
 from aiperf.orchestrator.strategies import FixedTrialsStrategy
 
@@ -23,7 +24,9 @@ class TestFixedTrialsStrategy:
                     RunResult(
                         label="run_0001",
                         success=True,
-                        summary_metrics={"ttft_avg": 100.0},
+                        summary_metrics={
+                            "ttft_avg": JsonMetricResult(unit="ms", avg=100.0)
+                        },
                         artifacts_path=Path("/tmp/run_0001"),
                     )
                 ],
@@ -34,13 +37,17 @@ class TestFixedTrialsStrategy:
                     RunResult(
                         label="run_0001",
                         success=True,
-                        summary_metrics={"ttft_avg": 100.0},
+                        summary_metrics={
+                            "ttft": JsonMetricResult(unit="ms", avg=100.0)
+                        },
                         artifacts_path=Path("/tmp/run_0001"),
                     ),
                     RunResult(
                         label="run_0002",
                         success=True,
-                        summary_metrics={"ttft_avg": 105.0},
+                        summary_metrics={
+                            "ttft": JsonMetricResult(unit="ms", avg=105.0)
+                        },
                         artifacts_path=Path("/tmp/run_0002"),
                     ),
                 ],
@@ -140,7 +147,7 @@ class TestFixedTrialsStrategy:
             RunResult(
                 label="run_0001",
                 success=True,
-                summary_metrics={"ttft_avg": 100.0},
+                summary_metrics={"ttft": JsonMetricResult(unit="ms", avg=100.0)},
                 artifacts_path=Path("/tmp/run_0001"),
             )
         ]
@@ -203,7 +210,7 @@ class TestFixedTrialsStrategy:
             RunResult(
                 label="run_0001",
                 success=True,
-                summary_metrics={"ttft_avg": 100.0},
+                summary_metrics={"ttft": JsonMetricResult(unit="ms", avg=100.0)},
                 artifacts_path=Path("/tmp/run_0001"),
             )
         ]
@@ -238,7 +245,7 @@ class TestFixedTrialsStrategy:
             RunResult(
                 label="run_0001",
                 success=True,
-                summary_metrics={"ttft_avg": 100.0},
+                summary_metrics={"ttft": JsonMetricResult(unit="ms", avg=100.0)},
                 artifacts_path=Path("/tmp/run_0001"),
             )
         ]
@@ -263,7 +270,7 @@ class TestFixedTrialsStrategy:
             RunResult(
                 label="run_0001",
                 success=True,
-                summary_metrics={"ttft_avg": 100.0},
+                summary_metrics={"ttft": JsonMetricResult(unit="ms", avg=100.0)},
                 artifacts_path=Path("/tmp/run_0001"),
             )
         ]

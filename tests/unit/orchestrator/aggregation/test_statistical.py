@@ -10,6 +10,7 @@ import numpy as np
 import pytest
 from scipy import stats
 
+from aiperf.common.models.export_models import JsonMetricResult
 from aiperf.orchestrator.aggregation.confidence import ConfidenceAggregation
 from aiperf.orchestrator.models import RunResult
 
@@ -45,7 +46,9 @@ class TestStatisticalValidation:
                 RunResult(
                     label=f"run_{i:04d}",
                     success=True,
-                    summary_metrics={"test_metric": float(value)},
+                    summary_metrics={
+                        "test_metric": JsonMetricResult(unit="ms", avg=float(value))
+                    },
                     artifacts_path=None,
                 )
                 for i, value in enumerate(sample)
@@ -55,7 +58,7 @@ class TestStatisticalValidation:
             aggregation = ConfidenceAggregation(confidence_level=confidence_level)
             agg_result = aggregation.aggregate(results)
 
-            metric = agg_result.metrics["test_metric"]
+            metric = agg_result.metrics["test_metric_avg"]
 
             # Check if CI contains true mean
             if metric.ci_low <= true_mean <= metric.ci_high:
@@ -91,7 +94,9 @@ class TestStatisticalValidation:
                 RunResult(
                     label=f"run_{i:04d}",
                     success=True,
-                    summary_metrics={"test_metric": float(value)},
+                    summary_metrics={
+                        "test_metric": JsonMetricResult(unit="ms", avg=float(value))
+                    },
                     artifacts_path=None,
                 )
                 for i, value in enumerate(sample)
@@ -100,7 +105,7 @@ class TestStatisticalValidation:
             aggregation = ConfidenceAggregation(confidence_level=confidence_level)
             agg_result = aggregation.aggregate(results)
 
-            metric = agg_result.metrics["test_metric"]
+            metric = agg_result.metrics["test_metric_avg"]
 
             if metric.ci_low <= true_mean <= metric.ci_high:
                 coverage_count += 1
@@ -133,7 +138,9 @@ class TestStatisticalValidation:
                 RunResult(
                     label=f"run_{i:04d}",
                     success=True,
-                    summary_metrics={"test_metric": float(value)},
+                    summary_metrics={
+                        "test_metric": JsonMetricResult(unit="ms", avg=float(value))
+                    },
                     artifacts_path=None,
                 )
                 for i, value in enumerate(sample)
@@ -142,7 +149,7 @@ class TestStatisticalValidation:
             aggregation = ConfidenceAggregation(confidence_level=0.95)
             agg_result = aggregation.aggregate(results)
 
-            metric = agg_result.metrics["test_metric"]
+            metric = agg_result.metrics["test_metric_avg"]
             cvs.append(metric.cv)
 
         # CV should increase monotonically with std
@@ -167,7 +174,9 @@ class TestStatisticalValidation:
             RunResult(
                 label=f"run_{i:04d}",
                 success=True,
-                summary_metrics={"test_metric": float(value)},
+                summary_metrics={
+                    "test_metric": JsonMetricResult(unit="ms", avg=float(value))
+                },
                 artifacts_path=None,
             )
             for i, value in enumerate(values)
@@ -176,7 +185,7 @@ class TestStatisticalValidation:
         aggregation = ConfidenceAggregation(confidence_level=0.95)
         agg_result = aggregation.aggregate(results)
 
-        metric = agg_result.metrics["test_metric"]
+        metric = agg_result.metrics["test_metric_avg"]
 
         # Calculate expected values
         expected_mean = np.mean(values)
@@ -209,7 +218,9 @@ class TestStatisticalValidation:
             RunResult(
                 label=f"run_{i:04d}",
                 success=True,
-                summary_metrics={"test_metric": float(value)},
+                summary_metrics={
+                    "test_metric": JsonMetricResult(unit="ms", avg=float(value))
+                },
                 artifacts_path=None,
             )
             for i, value in enumerate(values)
@@ -218,7 +229,7 @@ class TestStatisticalValidation:
         aggregation = ConfidenceAggregation(confidence_level=confidence_level)
         agg_result = aggregation.aggregate(results)
 
-        metric = agg_result.metrics["test_metric"]
+        metric = agg_result.metrics["test_metric_avg"]
 
         # Calculate expected t-critical using scipy
         alpha = 1 - confidence_level
@@ -255,7 +266,9 @@ class TestStatisticalValidation:
                 RunResult(
                     label=f"run_{i:04d}",
                     success=True,
-                    summary_metrics={"test_metric": float(value)},
+                    summary_metrics={
+                        "test_metric": JsonMetricResult(unit="ms", avg=float(value))
+                    },
                     artifacts_path=None,
                 )
                 for i, value in enumerate(sample)
@@ -264,7 +277,7 @@ class TestStatisticalValidation:
             aggregation = ConfidenceAggregation(confidence_level=confidence_level)
             agg_result = aggregation.aggregate(results)
 
-            metric = agg_result.metrics["test_metric"]
+            metric = agg_result.metrics["test_metric_avg"]
             ci_width = metric.ci_high - metric.ci_low
             ci_widths.append(ci_width)
 
@@ -283,7 +296,9 @@ class TestStatisticalValidation:
             RunResult(
                 label=f"run_{i:04d}",
                 success=True,
-                summary_metrics={"test_metric": float(value)},
+                summary_metrics={
+                    "test_metric": JsonMetricResult(unit="ms", avg=float(value))
+                },
                 artifacts_path=None,
             )
             for i, value in enumerate(values)
@@ -292,7 +307,7 @@ class TestStatisticalValidation:
         aggregation = ConfidenceAggregation(confidence_level=0.95)
         agg_result = aggregation.aggregate(results)
 
-        metric = agg_result.metrics["test_metric"]
+        metric = agg_result.metrics["test_metric_avg"]
 
         # Calculate expected SE
         n = len(values)
@@ -310,7 +325,9 @@ class TestStatisticalValidation:
             RunResult(
                 label=f"run_{i:04d}",
                 success=True,
-                summary_metrics={"test_metric": float(value)},
+                summary_metrics={
+                    "test_metric": JsonMetricResult(unit="ms", avg=float(value))
+                },
                 artifacts_path=None,
             )
             for i, value in enumerate(values)
@@ -319,7 +336,7 @@ class TestStatisticalValidation:
         aggregation = ConfidenceAggregation(confidence_level=0.95)
         agg_result = aggregation.aggregate(results)
 
-        metric = agg_result.metrics["test_metric"]
+        metric = agg_result.metrics["test_metric_avg"]
 
         # Calculate expected CI bounds
         margin = metric.t_critical * metric.se
@@ -337,7 +354,9 @@ class TestStatisticalValidation:
             RunResult(
                 label=f"run_{i:04d}",
                 success=True,
-                summary_metrics={"test_metric": float(value)},
+                summary_metrics={
+                    "test_metric": JsonMetricResult(unit="ms", avg=float(value))
+                },
                 artifacts_path=None,
             )
             for i, value in enumerate(values)
@@ -346,7 +365,7 @@ class TestStatisticalValidation:
         aggregation = ConfidenceAggregation(confidence_level=0.95)
         agg_result = aggregation.aggregate(results)
 
-        metric = agg_result.metrics["test_metric"]
+        metric = agg_result.metrics["test_metric_avg"]
 
         assert metric.min == 10.0
         assert metric.max == 30.0
@@ -359,7 +378,9 @@ class TestStatisticalValidation:
             RunResult(
                 label=f"run_{i:04d}",
                 success=True,
-                summary_metrics={"test_metric": float(value)},
+                summary_metrics={
+                    "test_metric": JsonMetricResult(unit="ms", avg=float(value))
+                },
                 artifacts_path=None,
             )
             for i, value in enumerate(values)
@@ -368,7 +389,7 @@ class TestStatisticalValidation:
         aggregation = ConfidenceAggregation(confidence_level=0.95)
         agg_result = aggregation.aggregate(results)
 
-        metric = agg_result.metrics["test_metric"]
+        metric = agg_result.metrics["test_metric_avg"]
 
         # CV should be inf when mean is zero
         assert metric.cv == float("inf")
@@ -387,8 +408,12 @@ class TestStatisticalValidation:
                 label=f"run_{i:04d}",
                 success=True,
                 summary_metrics={
-                    "metric1": float(metric1_values[i]),
-                    "metric2": float(metric2_values[i]),
+                    "metric1": JsonMetricResult(
+                        unit="ms", avg=float(metric1_values[i])
+                    ),
+                    "metric2": JsonMetricResult(
+                        unit="ms", avg=float(metric2_values[i])
+                    ),
                 },
                 artifacts_path=None,
             )
@@ -399,12 +424,12 @@ class TestStatisticalValidation:
         agg_result = aggregation.aggregate(results)
 
         # Both metrics should be aggregated
-        assert "metric1" in agg_result.metrics
-        assert "metric2" in agg_result.metrics
+        assert "metric1_avg" in agg_result.metrics
+        assert "metric2_avg" in agg_result.metrics
 
         # Verify each metric has correct statistics
-        metric1 = agg_result.metrics["metric1"]
-        metric2 = agg_result.metrics["metric2"]
+        metric1 = agg_result.metrics["metric1_avg"]
+        metric2 = agg_result.metrics["metric2_avg"]
 
         # Metric1 should have higher mean and std
         assert metric1.mean > metric2.mean

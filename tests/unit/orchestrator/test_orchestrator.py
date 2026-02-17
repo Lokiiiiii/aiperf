@@ -8,6 +8,7 @@ from unittest.mock import Mock, patch
 import pytest
 
 from aiperf.common.config import ServiceConfig, UserConfig
+from aiperf.common.models.export_models import JsonMetricResult
 from aiperf.orchestrator.models import RunResult
 from aiperf.orchestrator.orchestrator import MultiRunOrchestrator
 from aiperf.orchestrator.strategies import FixedTrialsStrategy
@@ -55,19 +56,19 @@ class TestMultiRunOrchestrator:
             RunResult(
                 label="run_0001",
                 success=True,
-                summary_metrics={"ttft_avg": 100.0},
+                summary_metrics={"ttft": JsonMetricResult(unit="ms", avg=100.0)},
                 artifacts_path=tmp_path / "run_0001",
             ),
             RunResult(
                 label="run_0002",
                 success=True,
-                summary_metrics={"ttft_avg": 105.0},
+                summary_metrics={"ttft": JsonMetricResult(unit="ms", avg=105.0)},
                 artifacts_path=tmp_path / "run_0002",
             ),
             RunResult(
                 label="run_0003",
                 success=True,
-                summary_metrics={"ttft_avg": 102.0},
+                summary_metrics={"ttft": JsonMetricResult(unit="ms", avg=102.0)},
                 artifacts_path=tmp_path / "run_0003",
             ),
         ]
@@ -97,7 +98,7 @@ class TestMultiRunOrchestrator:
             RunResult(
                 label="run_0001",
                 success=True,
-                summary_metrics={"ttft_avg": 100.0},
+                summary_metrics={"ttft": JsonMetricResult(unit="ms", avg=100.0)},
                 artifacts_path=tmp_path / "run_0001",
             ),
             RunResult(
@@ -109,7 +110,7 @@ class TestMultiRunOrchestrator:
             RunResult(
                 label="run_0003",
                 success=True,
-                summary_metrics={"ttft_avg": 102.0},
+                summary_metrics={"ttft": JsonMetricResult(unit="ms", avg=102.0)},
                 artifacts_path=tmp_path / "run_0003",
             ),
         ]
@@ -138,13 +139,13 @@ class TestMultiRunOrchestrator:
             RunResult(
                 label="run_0001",
                 success=True,
-                summary_metrics={"ttft_avg": 100.0},
+                summary_metrics={"ttft": JsonMetricResult(unit="ms", avg=100.0)},
                 artifacts_path=tmp_path / "run_0001",
             ),
             RunResult(
                 label="run_0002",
                 success=True,
-                summary_metrics={"ttft_avg": 105.0},
+                summary_metrics={"ttft": JsonMetricResult(unit="ms", avg=105.0)},
                 artifacts_path=tmp_path / "run_0002",
             ),
         ]
@@ -171,7 +172,7 @@ class TestMultiRunOrchestrator:
             RunResult(
                 label="run_0001",
                 success=True,
-                summary_metrics={"ttft_avg": 100.0},
+                summary_metrics={"ttft": JsonMetricResult(unit="ms", avg=100.0)},
                 artifacts_path=tmp_path / "run_0001",
             ),
         ]
@@ -225,8 +226,9 @@ class TestMultiRunOrchestrator:
 
         assert result.success is True
         assert result.label == "run_0001"
-        assert "time_to_first_token_avg" in result.summary_metrics
-        assert result.summary_metrics["time_to_first_token_avg"] == 150.5
+        assert "time_to_first_token" in result.summary_metrics
+        assert result.summary_metrics["time_to_first_token"].avg == 150.5
+        assert result.summary_metrics["time_to_first_token"].unit == "ms"
 
     def test_execute_single_run_subprocess_failure(
         self, mock_service_config, mock_user_config, tmp_path
@@ -392,13 +394,14 @@ class TestMultiRunOrchestrator:
         # Extract metrics
         metrics = orchestrator._extract_summary_metrics(artifacts_path)
 
-        # Verify metrics were extracted
-        assert "time_to_first_token_avg" in metrics
-        assert metrics["time_to_first_token_avg"] == 150.5
-        assert "time_to_first_token_p99" in metrics
-        assert metrics["time_to_first_token_p99"] == 195.0
-        assert "request_throughput_avg" in metrics
-        assert metrics["request_throughput_avg"] == 25.4
+        # Verify metrics were extracted with full JsonMetricResult structure
+        assert "time_to_first_token" in metrics
+        assert metrics["time_to_first_token"].avg == 150.5
+        assert metrics["time_to_first_token"].p99 == 195.0
+        assert metrics["time_to_first_token"].unit == "ms"
+        assert "request_throughput" in metrics
+        assert metrics["request_throughput"].avg == 25.4
+        assert metrics["request_throughput"].unit == "requests/sec"
 
     def test_extract_summary_metrics_missing_file(self, mock_service_config, tmp_path):
         """Test extracting metrics when file doesn't exist."""
@@ -430,10 +433,10 @@ class TestMultiRunOrchestrator:
         # Should return empty dict
         assert metrics == {}
 
-    def test_extract_summary_metrics_skips_non_numeric(
+    def test_extract_summary_metrics_preserves_structure(
         self, mock_service_config, tmp_path
     ):
-        """Test that non-numeric fields are skipped."""
+        """Test that the full JsonMetricResult structure is preserved."""
         orchestrator = MultiRunOrchestrator(tmp_path, mock_service_config)
 
         artifacts_path = tmp_path / "run_0001"
@@ -443,7 +446,8 @@ class TestMultiRunOrchestrator:
             "time_to_first_token": {
                 "unit": "ms",
                 "avg": 150.5,
-                "description": "This should be skipped",
+                "p50": 145.0,
+                "p99": 195.0,
             },
         }
 
@@ -452,10 +456,13 @@ class TestMultiRunOrchestrator:
 
         metrics = orchestrator._extract_summary_metrics(artifacts_path)
 
-        # Verify only numeric fields were extracted
-        assert "time_to_first_token_avg" in metrics
-        assert "time_to_first_token_description" not in metrics
-        assert "time_to_first_token_unit" not in metrics
+        # Verify the full structure is preserved
+        assert "time_to_first_token" in metrics
+        assert isinstance(metrics["time_to_first_token"], JsonMetricResult)
+        assert metrics["time_to_first_token"].unit == "ms"
+        assert metrics["time_to_first_token"].avg == 150.5
+        assert metrics["time_to_first_token"].p50 == 145.0
+        assert metrics["time_to_first_token"].p99 == 195.0
 
     def test_warmup_disabled_after_first_run(
         self, mock_service_config, mock_user_config, tmp_path
@@ -473,7 +480,7 @@ class TestMultiRunOrchestrator:
             return RunResult(
                 label=strategy.get_run_label(run_index),
                 success=True,
-                summary_metrics={"ttft_avg": 100.0},
+                summary_metrics={"ttft": JsonMetricResult(unit="ms", avg=100.0)},
                 artifacts_path=tmp_path / strategy.get_run_label(run_index),
             )
 
@@ -501,7 +508,7 @@ class TestMultiRunOrchestrator:
             RunResult(
                 label="run_0001",
                 success=True,
-                summary_metrics={"ttft_avg": 100.0},
+                summary_metrics={"ttft": JsonMetricResult(unit="ms", avg=100.0)},
                 artifacts_path=tmp_path / "run_0001",
             ),
         ]
@@ -514,3 +521,24 @@ class TestMultiRunOrchestrator:
 
         # Verify validate_config was called
         mock_validate.assert_called_once_with(mock_user_config)
+
+    def test_execute_single_run_handles_early_exception(
+        self, mock_service_config, mock_user_config, tmp_path
+    ):
+        """Test that early exceptions (before label is set) are handled gracefully."""
+        orchestrator = MultiRunOrchestrator(tmp_path, mock_service_config)
+
+        strategy = FixedTrialsStrategy(num_trials=1)
+
+        # Mock get_run_path to raise an exception before label is set
+        with patch.object(
+            strategy, "get_run_path", side_effect=Exception("Path creation failed")
+        ):
+            result = orchestrator._execute_single_run(mock_user_config, strategy, 0)
+
+        # Should return a RunResult with error, not crash with UnboundLocalError
+        assert result.success is False
+        assert "Path creation failed" in result.error
+        # Label should be the fallback value (run_index=0 -> run_0000) since get_run_label was never called
+        assert result.label == "run_0000"
+        assert result.artifacts_path is None

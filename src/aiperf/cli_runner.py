@@ -24,22 +24,6 @@ def run_system_controller(
     If num_profile_runs > 1, runs multi-run orchestration for confidence reporting.
     Otherwise, runs a single benchmark (backward compatibility).
     """
-    from aiperf.common.aiperf_logger import AIPerfLogger
-
-    logger = AIPerfLogger(__name__)
-
-    # Warn if using dashboard UI with multi-run mode
-    if (
-        user_config.loadgen.num_profile_runs > 1
-        and service_config.ui_type == UIType.DASHBOARD
-    ):
-        logger.warning(
-            "Dashboard UI does not show live updates in multi-run mode due to terminal control limitations. "
-            "Only final summaries will be displayed after each run completes. "
-            "For better multi-run experience, consider using '--ui simple' or '--ui none'. "
-            "See documentation for details."
-        )
-
     # Check if multi-run mode is enabled
     if user_config.loadgen.num_profile_runs > 1:
         _run_multi_benchmark(user_config, service_config)
@@ -157,6 +141,7 @@ def _run_multi_benchmark(
     then aggregates results and computes confidence statistics.
     """
     from aiperf.common.aiperf_logger import AIPerfLogger
+    from aiperf.common.logging import setup_rich_logging
     from aiperf.exporters.aggregate import (
         AggregateConfidenceCsvExporter,
         AggregateConfidenceJsonExporter,
@@ -166,7 +151,32 @@ def _run_multi_benchmark(
     from aiperf.orchestrator.orchestrator import MultiRunOrchestrator
     from aiperf.orchestrator.strategies import FixedTrialsStrategy
 
+    # Validate and adjust UI type for multi-run mode
+    if (
+        "ui_type" in service_config.model_fields_set
+        and service_config.ui_type == UIType.DASHBOARD
+    ):
+        raise ValueError(
+            "Dashboard UI is not supported with multi-run mode (--num-profile-runs > 1) "
+            "due to terminal control limitations. "
+            "Please use '--ui simple' or '--ui none' instead."
+        )
+
+    # Set default to simple if ui_type wasn't explicitly set
+    if "ui_type" not in service_config.model_fields_set:
+        service_config.ui_type = UIType.SIMPLE
+
+    # Set up logging so output is visible
+    setup_rich_logging(user_config, service_config)
+
     logger = AIPerfLogger(__name__)
+
+    # Inform user about UI mode (now that logging is set up)
+    if "ui_type" not in service_config.model_fields_set:
+        logger.info(
+            "Multi-run mode: UI automatically set to 'simple' "
+            "(use '--ui none' to disable UI output)"
+        )
 
     # Print multi-run banner
     num_runs = user_config.loadgen.num_profile_runs
@@ -303,31 +313,48 @@ def _print_aggregate_summary(
     logger.info("Key Metrics:")
     logger.info("-" * 80)
 
-    # Define key metrics to display with their display names
-    key_metrics = [
-        ("request_throughput", "Request Throughput"),
-        ("time_to_first_token_avg", "Time to First Token (Avg)"),
-        ("time_to_first_token_p99", "Time to First Token (P99)"),
-        ("inter_token_latency_avg", "Inter-Token Latency (Avg)"),
-        ("inter_token_latency_p99", "Inter-Token Latency (P99)"),
-        ("request_latency_avg", "Request Latency (Avg)"),
-        ("request_latency_p99", "Request Latency (P99)"),
+    # Define priority metrics to display (in order of preference)
+    # We'll look for these base metric names with _avg, _p99, _max suffixes
+    priority_metrics = [
+        "request_throughput",
+        "time_to_first_token",
+        "inter_token_latency",
+        "request_latency",
     ]
 
+    # Build list of metrics to display by finding available stat variants
+    metrics_to_display = []
+    for base_metric in priority_metrics:
+        # Look for _avg first (most common), then _p99, then _max
+        for suffix in ["_avg", "_p99", "_max", "_p50"]:
+            metric_key = f"{base_metric}{suffix}"
+            if metric_key in aggregate_result.metrics:
+                # Create display name (e.g., "Request Throughput (Avg)")
+                display_name = base_metric.replace("_", " ").title()
+                stat_name = suffix[1:].upper()  # Remove leading underscore
+                if stat_name == "AVG":
+                    stat_name = "Avg"
+                elif stat_name.startswith("P"):
+                    stat_name = f"P{stat_name[1:]}"  # P99, P50, etc.
+                else:
+                    stat_name = stat_name.capitalize()
+
+                metrics_to_display.append((metric_key, f"{display_name} ({stat_name})"))
+                break  # Only show one stat variant per base metric
+
     metrics_found = 0
-    for metric_name, display_name in key_metrics:
-        if metric_name in aggregate_result.metrics:
-            metric = aggregate_result.metrics[metric_name]
-            logger.info(f"\n{display_name}:")
-            logger.info(f"  Mean:    {metric.mean:>12.4f} {metric.unit}")
-            logger.info(f"  Std Dev: {metric.std:>12.4f} {metric.unit}")
-            logger.info(f"  Min:     {metric.min:>12.4f} {metric.unit}")
-            logger.info(f"  Max:     {metric.max:>12.4f} {metric.unit}")
-            logger.info(f"  CV:      {metric.cv:>12.2%}")
-            logger.info(
-                f"  {confidence_level:.0%} CI: [{metric.ci_low:.4f}, {metric.ci_high:.4f}] {metric.unit}"
-            )
-            metrics_found += 1
+    for metric_key, display_name in metrics_to_display:
+        metric = aggregate_result.metrics[metric_key]
+        logger.info(f"\n{display_name}:")
+        logger.info(f"  Mean:    {metric.mean:>12.4f} {metric.unit}")
+        logger.info(f"  Std Dev: {metric.std:>12.4f} {metric.unit}")
+        logger.info(f"  Min:     {metric.min:>12.4f} {metric.unit}")
+        logger.info(f"  Max:     {metric.max:>12.4f} {metric.unit}")
+        logger.info(f"  CV:      {metric.cv:>12.2%}")
+        logger.info(
+            f"  {confidence_level:.0%} CI: [{metric.ci_low:.4f}, {metric.ci_high:.4f}] {metric.unit}"
+        )
+        metrics_found += 1
 
     if metrics_found == 0:
         logger.warning("No key metrics found in aggregate results")

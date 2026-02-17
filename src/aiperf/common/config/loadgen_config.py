@@ -425,7 +425,7 @@ class LoadGeneratorConfig(BaseConfig):
             lt=1,
             description="Confidence level for computing confidence intervals (0-1). "
             "Only applies when --num-profile-runs > 1. "
-            "Common values: 0.90 (90%%), 0.95 (95%%, default), 0.99 (99%%). "
+            "Common values: 0.90 (90%), 0.95 (95%, default), 0.99 (99%). "
             "Higher values produce wider confidence intervals.",
         ),
         CLIParameter(

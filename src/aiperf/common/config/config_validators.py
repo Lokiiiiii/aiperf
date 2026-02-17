@@ -192,10 +192,18 @@ def parse_str_or_list_of_positive_values(input: Any) -> list[Any]:
     Returns:
         List[Any]: A list of positive integers or floats.
     Raises:
-        ValueError: If any value in the parsed list is not a positive integer or float.
+        ValueError: If any value in the parsed list is not a positive integer or float,
+                    or if the input is None.
     """
+    # Guard against None before calling parse_str_or_list to provide clear error
+    if input is None:
+        raise ValueError("input must be a string or list of strings, not None")
 
     output = parse_str_or_list(input)
+
+    # Additional safety check (should not be reached due to above check, but defensive)
+    if output is None:
+        raise ValueError("input must be a string or list of strings, not None")
 
     try:
         output = [

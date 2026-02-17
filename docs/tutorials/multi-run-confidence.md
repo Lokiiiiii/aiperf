@@ -348,7 +348,7 @@ Where `t_critical` is the critical value from the t-distribution with (n-1) degr
 **Example:**
 For the TTFT values above with 95% confidence:
 - t_critical ≈ 2.776 (for n=5, df=4)
-- CI = [151.2 - 2.776 * 1.16, 151.2 + 2.776 * 1.16] = [148.0ms, 154.4ms]
+- CI = `[151.2 - 2.776 * 1.16, 151.2 + 2.776 * 1.16]` = [148.0ms, 154.4ms]
 
 We're 95% confident the true mean TTFT is between 148.0ms and 154.4ms.
 

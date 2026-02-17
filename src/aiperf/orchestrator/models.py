@@ -5,13 +5,14 @@
 from pathlib import Path
 from typing import Any
 
-from pydantic import BaseModel, Field
+from pydantic import Field
 
 from aiperf.common.config import UserConfig
+from aiperf.common.models.base_models import AIPerfBaseModel
 from aiperf.common.models.export_models import JsonMetricResult
 
 
-class RunConfig(BaseModel):
+class RunConfig(AIPerfBaseModel):
     """Configuration for a single benchmark run."""
 
     config: UserConfig = Field(description="The benchmark configuration to execute")
@@ -24,7 +25,7 @@ class RunConfig(BaseModel):
     )
 
 
-class RunResult(BaseModel):
+class RunResult(AIPerfBaseModel):
     """Result from executing a single benchmark run."""
 
     label: str = Field(description="Label identifying this run")

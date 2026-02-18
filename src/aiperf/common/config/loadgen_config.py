@@ -507,7 +507,8 @@ class LoadGeneratorConfig(BaseConfig):
 
         Raises:
             ValueError: If confidence_level, profile_run_disable_warmup_after_first,
-                       or set_consistent_seed are explicitly set when num_profile_runs == 1.
+                       profile_run_cooldown_seconds, or set_consistent_seed are explicitly
+                       set when num_profile_runs == 1.
         """
         if self.num_profile_runs == 1:
             # Check if confidence_level was explicitly set by the user

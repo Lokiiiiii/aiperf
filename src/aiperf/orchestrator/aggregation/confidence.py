@@ -4,6 +4,7 @@
 
 import logging
 from dataclasses import dataclass
+from typing import TYPE_CHECKING
 
 import numpy as np
 from scipy import stats
@@ -11,6 +12,9 @@ from scipy import stats
 from aiperf.common.constants import STAT_KEYS
 from aiperf.orchestrator.aggregation.base import AggregateResult, AggregationStrategy
 from aiperf.orchestrator.models import RunResult
+
+if TYPE_CHECKING:
+    from aiperf.common.models.export_models import JsonMetricResult
 
 logger = logging.getLogger(__name__)
 
@@ -43,7 +47,7 @@ class ConfidenceMetric:
     t_critical: float
     unit: str
 
-    def to_json_result(self):
+    def to_json_result(self) -> "JsonMetricResult":
         """Convert to JsonMetricResult for export.
 
         Maps confidence statistics to JSON export format:
@@ -77,7 +81,7 @@ class ConfidenceAggregation(AggregationStrategy):
         confidence_level: Confidence level for intervals (default: 0.95)
     """
 
-    def __init__(self, confidence_level: float = 0.95):
+    def __init__(self, confidence_level: float = 0.95) -> None:
         """Initialize ConfidenceAggregation.
 
         Args:

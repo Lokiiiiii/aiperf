@@ -524,6 +524,13 @@ class LoadGeneratorConfig(BaseConfig):
                     "Remove --profile-run-disable-warmup-after-first or increase --num-profile-runs."
                 )
 
+            # Check if profile_run_cooldown_seconds was explicitly set by the user
+            if "profile_run_cooldown_seconds" in self.model_fields_set:
+                raise ValueError(
+                    "--profile-run-cooldown-seconds only applies when --num-profile-runs > 1. "
+                    "Remove --profile-run-cooldown-seconds or increase --num-profile-runs."
+                )
+
             # Check if set_consistent_seed was explicitly set by the user
             if "set_consistent_seed" in self.model_fields_set:
                 raise ValueError(

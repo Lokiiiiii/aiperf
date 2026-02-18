@@ -9,7 +9,6 @@ from aiperf.orchestrator.aggregation.base import (
 from aiperf.orchestrator.aggregation.confidence import (
     ConfidenceAggregation,
     ConfidenceMetric,
-    logger,
 )
 
 __all__ = [
@@ -17,5 +16,4 @@ __all__ = [
     "AggregationStrategy",
     "ConfidenceAggregation",
     "ConfidenceMetric",
-    "logger",
 ]

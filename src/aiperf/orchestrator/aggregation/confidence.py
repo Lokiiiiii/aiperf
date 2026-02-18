@@ -8,6 +8,7 @@ from dataclasses import dataclass
 import numpy as np
 from scipy import stats
 
+from aiperf.common.constants import STAT_KEYS
 from aiperf.orchestrator.aggregation.base import AggregateResult, AggregationStrategy
 from aiperf.orchestrator.models import RunResult
 
@@ -167,21 +168,7 @@ class ConfidenceAggregation(AggregationStrategy):
         for result in results:
             for metric_name, metric_result in result.summary_metrics.items():
                 # Get all populated stat fields
-                for stat_key in [
-                    "avg",
-                    "p1",
-                    "p5",
-                    "p10",
-                    "p25",
-                    "p50",
-                    "p75",
-                    "p90",
-                    "p95",
-                    "p99",
-                    "min",
-                    "max",
-                    "std",
-                ]:
+                for stat_key in STAT_KEYS:
                     if getattr(metric_result, stat_key, None) is not None:
                         metric_stat_pairs.add((metric_name, stat_key))
 

@@ -11,7 +11,6 @@ from aiperf.orchestrator.aggregation import (
     AggregationStrategy,
     ConfidenceAggregation,
     ConfidenceMetric,
-    logger,
 )
 from aiperf.orchestrator.models import (
     RunConfig,
@@ -24,9 +23,6 @@ from aiperf.orchestrator.strategies import (
     ExecutionStrategy,
     FixedTrialsStrategy,
 )
-from aiperf.orchestrator.subprocess_runner import (
-    main,
-)
 
 __all__ = [
     "AggregateResult",
@@ -38,6 +34,4 @@ __all__ = [
     "MultiRunOrchestrator",
     "RunConfig",
     "RunResult",
-    "logger",
-    "main",
 ]

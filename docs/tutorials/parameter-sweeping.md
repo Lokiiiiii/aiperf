@@ -127,7 +127,7 @@ You can combine parameter sweeping with multi-run confidence reporting to quanti
 ```bash
 aiperf profile \
   --model llama-3-8b \
-  --endpoint-type openai_chat \
+  --endpoint-type chat \
   --url http://localhost:8000/v1/chat/completions \
   --concurrency 10,20,30,40 \
   --num-profile-runs 5 \

@@ -341,26 +341,30 @@ class UserConfig(BaseConfig):
         Raises:
             ValueError: If parameter sweep is combined with fixed schedule mode.
         """
-        is_sweep = isinstance(self.loadgen.concurrency, list)
+        # Use parameter-agnostic sweep detection
+        sweep_param = self.loadgen.get_sweep_parameter()
+        is_sweep = sweep_param is not None
 
         if is_sweep:
             # Check for fixed schedule mode incompatibility
             # Fixed schedule mode is incompatible because it replays exact timing patterns
             # from a trace file, which doesn't make sense when varying concurrency
             if self.input.fixed_schedule:
+                param_name, param_values = sweep_param
                 raise ValueError(
-                    "Parameter sweeps (e.g., --concurrency 10,20,30) cannot be used with --fixed-schedule mode. "
+                    f"Parameter sweeps (e.g., --{param_name} {','.join(map(str, param_values))}) cannot be used with --fixed-schedule mode. "
                     "Fixed schedule replays exact timing patterns from trace files, which is incompatible with "
-                    "varying concurrency levels. Use a single concurrency value or remove --fixed-schedule."
+                    "varying parameter values. Use a single parameter value or remove --fixed-schedule."
                 )
 
             # Also check if mooncake_trace will auto-enable fixed schedule
             if self._should_use_fixed_schedule_for_mooncake_trace():
+                param_name, param_values = sweep_param
                 raise ValueError(
-                    "Parameter sweeps (e.g., --concurrency 10,20,30) cannot be used with mooncake_trace datasets "
+                    f"Parameter sweeps (e.g., --{param_name} {','.join(map(str, param_values))}) cannot be used with mooncake_trace datasets "
                     "that have timestamps (which auto-enable fixed schedule mode). "
                     "Fixed schedule replays exact timing patterns from trace files, which is incompatible with "
-                    "varying concurrency levels. Use a single concurrency value or use a dataset without timestamps."
+                    "varying parameter values. Use a single parameter value or use a dataset without timestamps."
                 )
 
         return self

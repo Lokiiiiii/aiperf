@@ -3,6 +3,7 @@
 """Tests for MultiRunOrchestrator."""
 
 import json
+from pathlib import Path
 from unittest.mock import Mock, patch
 
 import pytest
@@ -193,8 +194,6 @@ class TestMultiRunOrchestrator:
         """Test _execute_single_run with successful subprocess execution."""
         orchestrator = MultiRunOrchestrator(tmp_path, mock_service_config)
 
-        strategy = FixedTrialsStrategy(num_trials=1)
-
         # Create mock artifacts
         artifacts_path = tmp_path / "profile_runs" / "run_0001"
         artifacts_path.mkdir(parents=True)
@@ -222,7 +221,9 @@ class TestMultiRunOrchestrator:
         mock_result.stderr = ""
 
         with patch("subprocess.run", return_value=mock_result):
-            result = orchestrator._execute_single_run(mock_user_config, strategy, 0)
+            result = orchestrator._execute_single_run(
+                mock_user_config, "run_0001", artifacts_path
+            )
 
         assert result.success is True
         assert result.label == "run_0001"
@@ -236,7 +237,7 @@ class TestMultiRunOrchestrator:
         """Test _execute_single_run when subprocess fails."""
         orchestrator = MultiRunOrchestrator(tmp_path, mock_service_config)
 
-        strategy = FixedTrialsStrategy(num_trials=1)
+        artifacts_path = tmp_path / "run_0001"
 
         # Mock subprocess.run to return failure
         mock_result = Mock()
@@ -245,7 +246,9 @@ class TestMultiRunOrchestrator:
         mock_result.stderr = "Error: Connection refused"
 
         with patch("subprocess.run", return_value=mock_result):
-            result = orchestrator._execute_single_run(mock_user_config, strategy, 0)
+            result = orchestrator._execute_single_run(
+                mock_user_config, "run_0001", artifacts_path
+            )
 
         assert result.success is False
         assert result.label == "run_0001"
@@ -258,7 +261,7 @@ class TestMultiRunOrchestrator:
         """Test _execute_single_run when no metrics are found."""
         orchestrator = MultiRunOrchestrator(tmp_path, mock_service_config)
 
-        strategy = FixedTrialsStrategy(num_trials=1)
+        artifacts_path = tmp_path / "run_0001"
 
         # Mock subprocess.run to return success but no metrics file
         mock_result = Mock()
@@ -267,7 +270,9 @@ class TestMultiRunOrchestrator:
         mock_result.stderr = ""
 
         with patch("subprocess.run", return_value=mock_result):
-            result = orchestrator._execute_single_run(mock_user_config, strategy, 0)
+            result = orchestrator._execute_single_run(
+                mock_user_config, "run_0001", artifacts_path
+            )
 
         assert result.success is False
         assert "No metrics found" in result.error
@@ -277,8 +282,6 @@ class TestMultiRunOrchestrator:
     ):
         """Test _execute_single_run when request_count is zero."""
         orchestrator = MultiRunOrchestrator(tmp_path, mock_service_config)
-
-        strategy = FixedTrialsStrategy(num_trials=1)
 
         # Create mock artifacts with zero request count
         artifacts_path = tmp_path / "profile_runs" / "run_0001"
@@ -301,7 +304,9 @@ class TestMultiRunOrchestrator:
         mock_result.stderr = ""
 
         with patch("subprocess.run", return_value=mock_result):
-            result = orchestrator._execute_single_run(mock_user_config, strategy, 0)
+            result = orchestrator._execute_single_run(
+                mock_user_config, "run_0001", artifacts_path
+            )
 
         assert result.success is False
         assert "No requests completed" in result.error
@@ -312,11 +317,13 @@ class TestMultiRunOrchestrator:
         """Test _execute_single_run when an exception occurs."""
         orchestrator = MultiRunOrchestrator(tmp_path, mock_service_config)
 
-        strategy = FixedTrialsStrategy(num_trials=1)
+        artifacts_path = tmp_path / "run_0001"
 
         # Mock subprocess.run to raise an exception
         with patch("subprocess.run", side_effect=Exception("Unexpected error")):
-            result = orchestrator._execute_single_run(mock_user_config, strategy, 0)
+            result = orchestrator._execute_single_run(
+                mock_user_config, "run_0001", artifacts_path
+            )
 
         assert result.success is False
         assert "Unexpected error" in result.error
@@ -326,8 +333,6 @@ class TestMultiRunOrchestrator:
     ):
         """Test that _execute_single_run creates run_config.json."""
         orchestrator = MultiRunOrchestrator(tmp_path, mock_service_config)
-
-        strategy = FixedTrialsStrategy(num_trials=1)
 
         # Create mock artifacts
         artifacts_path = tmp_path / "profile_runs" / "run_0001"
@@ -351,7 +356,9 @@ class TestMultiRunOrchestrator:
         mock_result.stderr = ""
 
         with patch("subprocess.run", return_value=mock_result):
-            orchestrator._execute_single_run(mock_user_config, strategy, 0)
+            orchestrator._execute_single_run(
+                mock_user_config, "run_0001", artifacts_path
+            )
 
         # Verify run_config.json was created
         config_file = artifacts_path / "run_config.json"
@@ -474,14 +481,14 @@ class TestMultiRunOrchestrator:
 
         configs_used = []
 
-        def mock_execute(config, strategy, run_index):
+        def mock_execute(config, label, artifact_path):
             # Capture the config used
             configs_used.append(config.model_copy(deep=True))
             return RunResult(
-                label=strategy.get_run_label(run_index),
+                label=label,
                 success=True,
                 summary_metrics={"ttft": JsonMetricResult(unit="ms", avg=100.0)},
-                artifacts_path=tmp_path / strategy.get_run_label(run_index),
+                artifacts_path=artifact_path,
             )
 
         with patch.object(
@@ -525,20 +532,138 @@ class TestMultiRunOrchestrator:
     def test_execute_single_run_handles_early_exception(
         self, mock_service_config, mock_user_config, tmp_path
     ):
-        """Test that early exceptions (before label is set) are handled gracefully."""
+        """Test that early exceptions are handled gracefully."""
         orchestrator = MultiRunOrchestrator(tmp_path, mock_service_config)
 
-        strategy = FixedTrialsStrategy(num_trials=1)
+        artifacts_path = tmp_path / "run_0001"
 
-        # Mock get_run_path to raise an exception before label is set
-        with patch.object(
-            strategy, "get_run_path", side_effect=Exception("Path creation failed")
-        ):
-            result = orchestrator._execute_single_run(mock_user_config, strategy, 0)
+        # Mock mkdir to raise an exception
+        with patch.object(Path, "mkdir", side_effect=Exception("Path creation failed")):
+            result = orchestrator._execute_single_run(
+                mock_user_config, "run_0001", artifacts_path
+            )
 
-        # Should return a RunResult with error, not crash with UnboundLocalError
+        # Should return a RunResult with error
         assert result.success is False
         assert "Path creation failed" in result.error
-        # Label should be the fallback value (run_index=0 -> run_0000) since get_run_label was never called
-        assert result.label == "run_0000"
-        assert result.artifacts_path is None
+        assert result.label == "run_0001"
+
+    def test_collect_failed_sweep_values_with_no_failures(
+        self, mock_service_config, tmp_path
+    ):
+        """Test _collect_failed_sweep_values returns empty list when all runs succeed."""
+        orchestrator = MultiRunOrchestrator(tmp_path, mock_service_config)
+
+        results = [
+            RunResult(
+                label="concurrency_10",
+                success=True,
+                summary_metrics={},
+                metadata={"concurrency": 10, "value_index": 0},
+            ),
+            RunResult(
+                label="concurrency_20",
+                success=True,
+                summary_metrics={},
+                metadata={"concurrency": 20, "value_index": 1},
+            ),
+        ]
+
+        failed_values = orchestrator._collect_failed_sweep_values(results)
+        assert failed_values == []
+
+    def test_collect_failed_sweep_values_with_failures(
+        self, mock_service_config, tmp_path
+    ):
+        """Test _collect_failed_sweep_values collects failed sweep values."""
+        orchestrator = MultiRunOrchestrator(tmp_path, mock_service_config)
+
+        results = [
+            RunResult(
+                label="concurrency_10",
+                success=True,
+                summary_metrics={},
+                metadata={"concurrency": 10, "value_index": 0},
+            ),
+            RunResult(
+                label="concurrency_20",
+                success=False,
+                error="Connection timeout",
+                metadata={"concurrency": 20, "value_index": 1},
+            ),
+            RunResult(
+                label="concurrency_30",
+                success=True,
+                summary_metrics={},
+                metadata={"concurrency": 30, "value_index": 2},
+            ),
+        ]
+
+        failed_values = orchestrator._collect_failed_sweep_values(results)
+
+        assert len(failed_values) == 1
+        assert failed_values[0]["value"] == 20
+        assert failed_values[0]["parameter_name"] == "concurrency"
+        assert failed_values[0]["error"] == "Connection timeout"
+        assert "timestamp" in failed_values[0]
+
+    def test_collect_failed_sweep_values_deduplicates(
+        self, mock_service_config, tmp_path
+    ):
+        """Test _collect_failed_sweep_values deduplicates multiple failures at same value."""
+        orchestrator = MultiRunOrchestrator(tmp_path, mock_service_config)
+
+        # Multiple trials at same concurrency value, all failed
+        results = [
+            RunResult(
+                label="trial_0001_concurrency_20",
+                success=False,
+                error="Connection timeout",
+                metadata={"concurrency": 20, "trial_index": 0, "value_index": 1},
+            ),
+            RunResult(
+                label="trial_0002_concurrency_20",
+                success=False,
+                error="Connection timeout",
+                metadata={"concurrency": 20, "trial_index": 1, "value_index": 1},
+            ),
+            RunResult(
+                label="trial_0003_concurrency_20",
+                success=False,
+                error="Connection timeout",
+                metadata={"concurrency": 20, "trial_index": 2, "value_index": 1},
+            ),
+        ]
+
+        failed_values = orchestrator._collect_failed_sweep_values(results)
+
+        # Should only report the value once, not three times
+        assert len(failed_values) == 1
+        assert failed_values[0]["value"] == 20
+
+    def test_collect_failed_sweep_values_ignores_non_sweep_failures(
+        self, mock_service_config, tmp_path
+    ):
+        """Test _collect_failed_sweep_values ignores failures without sweep metadata."""
+        orchestrator = MultiRunOrchestrator(tmp_path, mock_service_config)
+
+        results = [
+            RunResult(
+                label="run_0001",
+                success=False,
+                error="Some error",
+                metadata={},  # No concurrency metadata
+            ),
+            RunResult(
+                label="concurrency_20",
+                success=False,
+                error="Connection timeout",
+                metadata={"concurrency": 20, "value_index": 1},
+            ),
+        ]
+
+        failed_values = orchestrator._collect_failed_sweep_values(results)
+
+        # Should only collect the sweep failure, not the non-sweep failure
+        assert len(failed_values) == 1
+        assert failed_values[0]["value"] == 20

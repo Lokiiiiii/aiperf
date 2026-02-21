@@ -71,7 +71,7 @@ class TestRunSystemController:
 
         # Should raise ValueError when _run_multi_benchmark is called
         with pytest.raises(
-            ValueError, match="Dashboard UI is not supported with multi-run mode"
+            ValueError, match="Dashboard UI.*is not supported with multi-run mode"
         ):
             _run_multi_benchmark(user_config_multi_run, service_config)
 
@@ -118,6 +118,71 @@ class TestRunSystemController:
             "Dashboard UI does not show live updates" in record.message
             for record in caplog.records
         )
+
+    def test_raises_error_when_using_dashboard_ui_with_parameter_sweep(
+        self,
+        user_config_single_run: UserConfig,
+        service_config: ServiceConfig,
+    ):
+        """Test that an error is raised when explicitly using dashboard UI with parameter sweep."""
+        from aiperf.cli_runner import run_system_controller
+
+        # Set concurrency as a list (parameter sweep)
+        user_config_single_run.loadgen.concurrency = [10, 20, 30]
+
+        # Set dashboard UI explicitly (simulate user setting it)
+        service_config.ui_type = UIType.DASHBOARD
+        service_config.model_fields_set.add("ui_type")
+
+        # Should raise ValueError
+        with pytest.raises(
+            ValueError,
+            match="Dashboard UI.*is not supported with parameter sweeps",
+        ):
+            run_system_controller(user_config_single_run, service_config)
+
+    @patch("aiperf.cli_runner._run_multi_benchmark")
+    def test_no_error_when_using_simple_ui_with_parameter_sweep(
+        self,
+        mock_multi: Mock,
+        user_config_single_run: UserConfig,
+        service_config: ServiceConfig,
+    ):
+        """Test that no error is raised when using simple UI with parameter sweep."""
+        from aiperf.cli_runner import run_system_controller
+
+        # Set concurrency as a list (parameter sweep)
+        user_config_single_run.loadgen.concurrency = [10, 20, 30]
+
+        # Set simple UI
+        service_config.ui_type = UIType.SIMPLE
+        service_config.model_fields_set.add("ui_type")
+
+        # Should not raise an error
+        run_system_controller(user_config_single_run, service_config)
+        mock_multi.assert_called_once()
+
+    @patch("aiperf.cli_runner._run_multi_benchmark")
+    def test_no_error_when_dashboard_ui_not_explicitly_set_with_parameter_sweep(
+        self,
+        mock_multi: Mock,
+        user_config_single_run: UserConfig,
+        service_config: ServiceConfig,
+    ):
+        """Test that no error is raised when dashboard UI is default (not explicitly set) with parameter sweep."""
+        from aiperf.cli_runner import run_system_controller
+
+        # Set concurrency as a list (parameter sweep)
+        user_config_single_run.loadgen.concurrency = [10, 20, 30]
+
+        # Dashboard UI is default but not explicitly set by user
+        service_config.ui_type = UIType.DASHBOARD
+        # Explicitly remove from model_fields_set to simulate default value
+        service_config.model_fields_set.discard("ui_type")
+
+        # Should not raise an error (validation only checks explicitly set values)
+        run_system_controller(user_config_single_run, service_config)
+        mock_multi.assert_called_once()
 
 
 class TestRunSingleBenchmark:
@@ -206,7 +271,6 @@ class TestRunMultiBenchmark:
         result.metrics = {}
         return result
 
-    @patch("aiperf.orchestrator.strategies.FixedTrialsStrategy")
     @patch("aiperf.orchestrator.orchestrator.MultiRunOrchestrator")
     @patch("aiperf.orchestrator.aggregation.confidence.ConfidenceAggregation")
     @patch("aiperf.exporters.aggregate.AggregateConfidenceJsonExporter")
@@ -217,7 +281,6 @@ class TestRunMultiBenchmark:
         mock_json_exporter_cls: Mock,
         mock_aggregation_cls: Mock,
         mock_orchestrator_cls: Mock,
-        mock_strategy_cls: Mock,
         user_config_multi: UserConfig,
         service_config: ServiceConfig,
         mock_run_result: MagicMock,
@@ -229,11 +292,6 @@ class TestRunMultiBenchmark:
 
         # Set up artifact directory
         user_config_multi.output.artifact_directory = tmp_path
-
-        # Mock strategy
-        mock_strategy = MagicMock()
-        mock_strategy.get_aggregate_path.return_value = tmp_path / "aggregate"
-        mock_strategy_cls.return_value = mock_strategy
 
         # Mock orchestrator to return 3 successful results
         mock_orchestrator = MagicMock()
@@ -260,20 +318,12 @@ class TestRunMultiBenchmark:
 
         _run_multi_benchmark(user_config_multi, service_config)
 
-        # Verify strategy was created with correct parameters
-        mock_strategy_cls.assert_called_once_with(
-            num_trials=3,
-            cooldown_seconds=5,
-            auto_set_seed=True,
-            disable_warmup_after_first=True,
-        )
-
-        # Verify orchestrator was created and executed
+        # Verify orchestrator was created and executed with strategy=None (auto-detect)
         mock_orchestrator_cls.assert_called_once_with(
             base_dir=tmp_path, service_config=service_config
         )
         mock_orchestrator.execute.assert_called_once_with(
-            user_config_multi, mock_strategy
+            user_config_multi, strategy=None
         )
 
         # Verify aggregation was performed
@@ -284,12 +334,10 @@ class TestRunMultiBenchmark:
         mock_json_exporter.export.assert_called_once()
         mock_csv_exporter.export.assert_called_once()
 
-    @patch("aiperf.orchestrator.strategies.FixedTrialsStrategy")
     @patch("aiperf.orchestrator.orchestrator.MultiRunOrchestrator")
     def test_multi_run_orchestrator_exception(
         self,
         mock_orchestrator_cls: Mock,
-        mock_strategy_cls: Mock,
         user_config_multi: UserConfig,
         service_config: ServiceConfig,
         tmp_path: Path,
@@ -299,10 +347,6 @@ class TestRunMultiBenchmark:
 
         user_config_multi.output.artifact_directory = tmp_path
 
-        # Mock strategy
-        mock_strategy = MagicMock()
-        mock_strategy_cls.return_value = mock_strategy
-
         # Mock orchestrator to raise exception
         mock_orchestrator = MagicMock()
         mock_orchestrator.execute.side_effect = RuntimeError("Orchestrator failed")
@@ -311,12 +355,10 @@ class TestRunMultiBenchmark:
         with pytest.raises(RuntimeError, match="Orchestrator failed"):
             _run_multi_benchmark(user_config_multi, service_config)
 
-    @patch("aiperf.orchestrator.strategies.FixedTrialsStrategy")
     @patch("aiperf.orchestrator.orchestrator.MultiRunOrchestrator")
     def test_multi_run_only_one_successful_exits_with_error(
         self,
         mock_orchestrator_cls: Mock,
-        mock_strategy_cls: Mock,
         user_config_multi: UserConfig,
         service_config: ServiceConfig,
         mock_run_result: MagicMock,
@@ -326,10 +368,6 @@ class TestRunMultiBenchmark:
         from aiperf.cli_runner import _run_multi_benchmark
 
         user_config_multi.output.artifact_directory = tmp_path
-
-        # Mock strategy
-        mock_strategy = MagicMock()
-        mock_strategy_cls.return_value = mock_strategy
 
         # Mock orchestrator to return 1 successful and 2 failed results
         failed_result = MagicMock()
@@ -349,12 +387,10 @@ class TestRunMultiBenchmark:
 
         assert exc_info.value.code == 1
 
-    @patch("aiperf.orchestrator.strategies.FixedTrialsStrategy")
     @patch("aiperf.orchestrator.orchestrator.MultiRunOrchestrator")
     def test_multi_run_all_failed_exits_with_error(
         self,
         mock_orchestrator_cls: Mock,
-        mock_strategy_cls: Mock,
         user_config_multi: UserConfig,
         service_config: ServiceConfig,
         tmp_path: Path,
@@ -363,10 +399,6 @@ class TestRunMultiBenchmark:
         from aiperf.cli_runner import _run_multi_benchmark
 
         user_config_multi.output.artifact_directory = tmp_path
-
-        # Mock strategy
-        mock_strategy = MagicMock()
-        mock_strategy_cls.return_value = mock_strategy
 
         # Mock orchestrator to return all failed results
         failed_result = MagicMock()

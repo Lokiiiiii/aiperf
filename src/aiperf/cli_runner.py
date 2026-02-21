@@ -3,6 +3,7 @@
 
 import contextlib
 import sys
+from pathlib import Path
 from typing import TYPE_CHECKING
 
 from aiperf.cli_utils import raise_startup_error_and_exit
@@ -13,6 +14,33 @@ from aiperf.plugin.enums import ServiceType, UIType
 if TYPE_CHECKING:
     from aiperf.common.aiperf_logger import AIPerfLogger
     from aiperf.orchestrator.aggregation.base import AggregateResult
+    from aiperf.orchestrator.models import RunResult
+
+
+def _validate_ui_compatibility(
+    user_config: UserConfig,
+    service_config: ServiceConfig,
+) -> None:
+    """Validate UI type compatibility with parameter sweeps.
+
+    Raises:
+        ValueError: If dashboard UI is explicitly set with parameter sweeps.
+    """
+    # Check if concurrency is a list (parameter sweep)
+    is_sweep = isinstance(user_config.loadgen.concurrency, list)
+
+    # Check if dashboard UI was explicitly set by user
+    if (
+        is_sweep
+        and "ui_type" in service_config.model_fields_set
+        and service_config.ui_type == UIType.DASHBOARD
+    ):
+        raise ValueError(
+            "Dashboard UI (--ui dashboard) is not supported with parameter sweeps "
+            "due to terminal control limitations when running multiple sequential benchmarks. "
+            "Use --ui simple (recommended, shows progress bars) or --ui none (no UI output). "
+            "Example: aiperf --concurrency 10,20,30 --ui simple ..."
+        )
 
 
 def run_system_controller(
@@ -21,11 +49,17 @@ def run_system_controller(
 ) -> None:
     """Run the system controller with the given configuration.
 
-    If num_profile_runs > 1, runs multi-run orchestration for confidence reporting.
+    If num_profile_runs > 1 OR parameter sweep is detected, runs multi-run orchestration.
     Otherwise, runs a single benchmark (backward compatibility).
     """
-    # Check if multi-run mode is enabled
-    if user_config.loadgen.num_profile_runs > 1:
+    # Validate dashboard UI is not used with parameter sweeps
+    _validate_ui_compatibility(user_config, service_config)
+
+    # Check if multi-run mode or parameter sweep is enabled
+    is_sweep = isinstance(user_config.loadgen.concurrency, list)
+    is_multi_run = user_config.loadgen.num_profile_runs > 1
+
+    if is_multi_run or is_sweep:
         _run_multi_benchmark(user_config, service_config)
     else:
         _run_single_benchmark(user_config, service_config)
@@ -135,10 +169,12 @@ def _run_multi_benchmark(
     user_config: UserConfig,
     service_config: ServiceConfig,
 ) -> None:
-    """Run multiple benchmarks for confidence reporting.
+    """Run multiple benchmarks for confidence reporting or parameter sweeps.
 
-    Executes num_profile_runs benchmarks with the same configuration,
-    then aggregates results and computes confidence statistics.
+    Executes benchmarks according to the detected mode:
+    - Parameter sweep only: Tests different parameter values
+    - Confidence trials only: Runs same config multiple times
+    - Both: Combines sweep and confidence (nested execution)
     """
     from aiperf.common.aiperf_logger import AIPerfLogger
     from aiperf.common.logging import setup_rich_logging
@@ -149,7 +185,6 @@ def _run_multi_benchmark(
     )
     from aiperf.orchestrator.aggregation.confidence import ConfidenceAggregation
     from aiperf.orchestrator.orchestrator import MultiRunOrchestrator
-    from aiperf.orchestrator.strategies import FixedTrialsStrategy
 
     # Validate and adjust UI type for multi-run mode
     if (
@@ -157,9 +192,10 @@ def _run_multi_benchmark(
         and service_config.ui_type == UIType.DASHBOARD
     ):
         raise ValueError(
-            "Dashboard UI is not supported with multi-run mode (--num-profile-runs > 1) "
-            "due to terminal control limitations. "
-            "Please use '--ui simple' or '--ui none' instead."
+            "Dashboard UI (--ui dashboard) is not supported with multi-run mode (--num-profile-runs > 1) "
+            "or parameter sweeps due to terminal control limitations when running multiple sequential benchmarks. "
+            "Use --ui simple (recommended, shows progress bars) or --ui none (no UI output). "
+            "Example: aiperf --concurrency 10,20,30 --ui simple ..."
         )
 
     # Set default to simple if ui_type wasn't explicitly set
@@ -178,34 +214,41 @@ def _run_multi_benchmark(
             "(use '--ui none' to disable UI output)"
         )
 
-    # Print multi-run banner
-    num_runs = user_config.loadgen.num_profile_runs
-    confidence_level = user_config.loadgen.confidence_level
-    cooldown = user_config.loadgen.profile_run_cooldown_seconds
+    # Detect mode
+    is_sweep = isinstance(user_config.loadgen.concurrency, list)
+    is_confidence = user_config.loadgen.num_profile_runs > 1
 
+    # Print banner based on mode
     logger.info("=" * 80)
-    logger.info("Starting Multi-Run Confidence Reporting")
-    logger.info(f"  Number of runs: {num_runs}")
-    logger.info(f"  Confidence level: {confidence_level:.0%}")
-    logger.info(f"  Cooldown between runs: {cooldown}s")
+    if is_sweep and is_confidence:
+        logger.info("Starting Parameter Sweep with Confidence Trials")
+        logger.info(f"  Parameter: concurrency = {user_config.loadgen.concurrency}")
+        logger.info(f"  Sweep mode: {user_config.loadgen.parameter_sweep_mode}")
+        logger.info(f"  Trials per value: {user_config.loadgen.num_profile_runs}")
+        logger.info(f"  Confidence level: {user_config.loadgen.confidence_level:.0%}")
+    elif is_sweep:
+        logger.info("Starting Parameter Sweep")
+        logger.info(f"  Parameter: concurrency = {user_config.loadgen.concurrency}")
+        logger.info(
+            f"  Sweep cooldown: {user_config.loadgen.parameter_sweep_cooldown_seconds}s"
+        )
+    elif is_confidence:
+        logger.info("Starting Multi-Run Confidence Reporting")
+        logger.info(f"  Number of runs: {user_config.loadgen.num_profile_runs}")
+        logger.info(f"  Confidence level: {user_config.loadgen.confidence_level:.0%}")
+        logger.info(
+            f"  Cooldown between runs: {user_config.loadgen.profile_run_cooldown_seconds}s"
+        )
     logger.info("=" * 80)
 
-    # Create strategy
-    strategy = FixedTrialsStrategy(
-        num_trials=num_runs,
-        cooldown_seconds=cooldown,
-        auto_set_seed=user_config.loadgen.set_consistent_seed,
-        disable_warmup_after_first=user_config.loadgen.profile_run_disable_warmup_after_first,
-    )
-
-    # Create orchestrator
+    # Create orchestrator (it will auto-detect the strategy from config)
     orchestrator = MultiRunOrchestrator(
         base_dir=user_config.output.artifact_directory, service_config=service_config
     )
 
-    # Execute runs
+    # Execute runs (orchestrator auto-detects mode from config)
     try:
-        results = orchestrator.execute(user_config, strategy)
+        results = orchestrator.execute(user_config, strategy=None)
     except Exception:
         logger.exception("Error executing multi-run benchmark")
         raise
@@ -215,59 +258,117 @@ def _run_multi_benchmark(
     failed_runs = [r for r in results if not r.success]
 
     logger.info("=" * 80)
-    logger.info(f"All runs complete: {len(successful_runs)}/{num_runs} successful")
+    logger.info(f"All runs complete: {len(successful_runs)}/{len(results)} successful")
     if failed_runs:
         logger.warning(f"Failed runs: {', '.join(r.label for r in failed_runs)}")
     logger.info("=" * 80)
+
+    # Check if this is sweep + confidence mode (multiple concurrency values)
+    concurrency_values = set()
+    for r in results:
+        if "concurrency" in r.metadata:
+            concurrency_values.add(r.metadata["concurrency"])
+    has_sweep_metadata = len(concurrency_values) > 1
+
+    # For sweep-only mode, we're done (no aggregation needed for single runs per value)
+    if is_sweep and not is_confidence:
+        if len(successful_runs) < len(results):
+            logger.warning("Some sweep values failed. Check logs for details.")
+            sys.exit(1)
+        else:
+            logger.info("Parameter sweep completed successfully!")
+        return
 
     # Aggregate results if we have at least 2 successful runs
     if len(successful_runs) >= 2:
         logger.info("Computing aggregate statistics...")
 
-        aggregation = ConfidenceAggregation(confidence_level=confidence_level)
-        aggregate_result = aggregation.aggregate(results)
+        # If sweep + confidence mode, compute per-value aggregates and sweep aggregates
+        if has_sweep_metadata:
+            sweep_mode = results[0].metadata.get("sweep_mode", "repeated")
+            _aggregate_per_sweep_value(
+                results,
+                user_config.loadgen.confidence_level,
+                user_config.output.artifact_directory,
+                sweep_mode,
+            )
+            # Compute sweep-level aggregates (Pareto optimal, trends, best configs)
+            try:
+                _compute_sweep_aggregates(
+                    results,
+                    user_config.loadgen.confidence_level,
+                    user_config.output.artifact_directory,
+                    sweep_mode,
+                )
+            except Exception:
+                logger.exception("Error computing sweep-level aggregates")
+                raise
+        else:
+            # Confidence-only mode: compute overall aggregate
+            aggregation = ConfidenceAggregation(
+                confidence_level=user_config.loadgen.confidence_level
+            )
+            aggregate_result = aggregation.aggregate(results)
 
-        # Add cooldown to metadata
-        aggregate_result.metadata["cooldown_seconds"] = cooldown
-
-        # Write aggregate artifacts using exporters
-        aggregate_dir = strategy.get_aggregate_path(
-            user_config.output.artifact_directory
-        )
-
-        # Create exporter config
-        exporter_config = AggregateExporterConfig(
-            result=aggregate_result,
-            output_dir=aggregate_dir,
-        )
-
-        # Export both JSON and CSV in a single async context
-        # This avoids multiple asyncio.run() calls and is more efficient
-        import asyncio
-
-        async def export_artifacts():
-            """Export aggregate artifacts asynchronously."""
-            # Create directory asynchronously
-            await asyncio.to_thread(aggregate_dir.mkdir, parents=True, exist_ok=True)
-
-            # Export JSON and CSV concurrently
-            json_exporter = AggregateConfidenceJsonExporter(exporter_config)
-            csv_exporter = AggregateConfidenceCsvExporter(exporter_config)
-
-            json_path, csv_path = await asyncio.gather(
-                json_exporter.export(),
-                csv_exporter.export(),
+            # Add cooldown to metadata
+            aggregate_result.metadata["cooldown_seconds"] = (
+                user_config.loadgen.profile_run_cooldown_seconds
             )
 
-            return json_path, csv_path
+            # Write aggregate artifacts using exporters
+            from pathlib import Path
 
-        json_path, csv_path = asyncio.run(export_artifacts())
+            aggregate_dir = (
+                Path(user_config.output.artifact_directory)
+                / "profile_runs"
+                / "aggregate"
+            )
 
-        logger.info(f"Aggregate JSON written to: {json_path}")
-        logger.info(f"Aggregate CSV written to: {csv_path}")
+            # Create exporter config
+            exporter_config = AggregateExporterConfig(
+                result=aggregate_result,
+                output_dir=aggregate_dir,
+            )
 
-        # Print summary
-        _print_aggregate_summary(aggregate_result, logger)
+            # Export both JSON and CSV in a single async context
+            # This avoids multiple asyncio.run() calls and is more efficient
+            import asyncio
+
+            async def export_artifacts(
+                agg_dir: Path, exp_config: AggregateExporterConfig
+            ) -> tuple[Path, Path]:
+                """Export aggregate artifacts asynchronously.
+
+                Args:
+                    agg_dir: Directory to write artifacts to
+                    exp_config: Exporter configuration
+
+                Returns:
+                    Tuple of (json_path, csv_path)
+                """
+                # Create directory asynchronously
+                await asyncio.to_thread(agg_dir.mkdir, parents=True, exist_ok=True)
+
+                # Export JSON and CSV concurrently
+                json_exporter = AggregateConfidenceJsonExporter(exp_config)
+                csv_exporter = AggregateConfidenceCsvExporter(exp_config)
+
+                json_path, csv_path = await asyncio.gather(
+                    json_exporter.export(),
+                    csv_exporter.export(),
+                )
+
+                return json_path, csv_path
+
+            json_path, csv_path = asyncio.run(
+                export_artifacts(aggregate_dir, exporter_config)
+            )
+
+            logger.info(f"Aggregate JSON written to: {json_path}")
+            logger.info(f"Aggregate CSV written to: {csv_path}")
+
+            # Print summary
+            _print_aggregate_summary(aggregate_result, logger)
     elif len(successful_runs) == 1:
         logger.warning(
             "Only 1 successful run - cannot compute confidence statistics. "
@@ -280,6 +381,312 @@ def _run_multi_benchmark(
             "Please check the error messages above."
         )
         sys.exit(1)
+
+
+def _aggregate_per_sweep_value(
+    results: list["RunResult"],
+    confidence_level: float,
+    base_dir: "Path",
+    sweep_mode: str,
+) -> None:
+    """Aggregate results per sweep value for sweep + confidence mode.
+
+    Groups results by concurrency value and applies ConfidenceAggregation
+    to each group, writing aggregate files to the correct directories.
+
+    Args:
+        results: List of all run results
+        confidence_level: Confidence level for intervals
+        base_dir: Base artifact directory
+        sweep_mode: Sweep mode (repeated or independent)
+    """
+    from collections import defaultdict
+
+    from aiperf.common.aiperf_logger import AIPerfLogger
+    from aiperf.exporters.aggregate import (
+        AggregateConfidenceCsvExporter,
+        AggregateConfidenceJsonExporter,
+        AggregateExporterConfig,
+    )
+    from aiperf.orchestrator.aggregation.confidence import ConfidenceAggregation
+
+    logger = AIPerfLogger(__name__)
+
+    # Group results by concurrency value
+    results_by_value: dict[int, list[RunResult]] = defaultdict(list)
+    for result in results:
+        if "concurrency" in result.metadata:
+            concurrency = result.metadata["concurrency"]
+            results_by_value[concurrency].append(result)
+
+    if not results_by_value:
+        logger.warning(
+            "No sweep results found with concurrency metadata. "
+            "This may indicate a problem with sweep execution. "
+            "Check that --concurrency was specified as a list (e.g., --concurrency 10,20,30)."
+        )
+        return
+
+    logger.info(
+        f"Computing per-value aggregates for {len(results_by_value)} concurrency values..."
+    )
+
+    # Aggregate each concurrency value
+    aggregation = ConfidenceAggregation(confidence_level=confidence_level)
+
+    for concurrency_value in sorted(results_by_value.keys()):
+        value_results = results_by_value[concurrency_value]
+
+        # Check if we have enough successful runs
+        successful = [r for r in value_results if r.success]
+        if len(successful) < 2:
+            logger.warning(
+                f"Skipping aggregate statistics for concurrency={concurrency_value}: "
+                f"only {len(successful)} successful run(s), need at least 2 for confidence intervals. "
+                f"Consider increasing --num-profile-runs or investigating why runs failed."
+            )
+            continue
+
+        logger.info(
+            f"  Aggregating concurrency={concurrency_value} "
+            f"({len(successful)}/{len(value_results)} successful)"
+        )
+
+        # Compute aggregate statistics
+        aggregate_result = aggregation.aggregate(value_results)
+
+        # Add sweep-specific metadata
+        aggregate_result.metadata["concurrency"] = concurrency_value
+        aggregate_result.metadata["sweep_mode"] = sweep_mode
+
+        # Determine output directory based on sweep mode
+        if sweep_mode == "repeated":
+            # Repeated: base_dir/aggregate/concurrency_10/
+            aggregate_dir = base_dir / "aggregate" / f"concurrency_{concurrency_value}"
+        else:  # independent
+            # Independent: base_dir/concurrency_10/aggregate/
+            aggregate_dir = base_dir / f"concurrency_{concurrency_value}" / "aggregate"
+
+        # Create exporter config
+        exporter_config = AggregateExporterConfig(
+            result=aggregate_result,
+            output_dir=aggregate_dir,
+        )
+
+        # Export artifacts
+        import asyncio
+
+        async def export_artifacts(
+            agg_dir: Path, exp_config: AggregateExporterConfig
+        ) -> tuple[Path, Path]:
+            """Export aggregate artifacts asynchronously.
+
+            Args:
+                agg_dir: Directory to write artifacts to
+                exp_config: Exporter configuration
+
+            Returns:
+                Tuple of (json_path, csv_path)
+            """
+            await asyncio.to_thread(agg_dir.mkdir, parents=True, exist_ok=True)
+
+            json_exporter = AggregateConfidenceJsonExporter(exp_config)
+            csv_exporter = AggregateConfidenceCsvExporter(exp_config)
+
+            json_path, csv_path = await asyncio.gather(
+                json_exporter.export(),
+                csv_exporter.export(),
+            )
+
+            return json_path, csv_path
+
+        json_path, csv_path = asyncio.run(
+            export_artifacts(aggregate_dir, exporter_config)
+        )
+
+        logger.info(f"    JSON: {json_path}")
+        logger.info(f"    CSV: {csv_path}")
+
+
+def _compute_sweep_aggregates(
+    results: list["RunResult"],
+    confidence_level: float,
+    base_dir: "Path",
+    sweep_mode: str,
+) -> None:
+    """Compute sweep-level aggregates (Pareto optimal, trends, best configs).
+
+    This function computes sweep-level statistics by reading the per-value
+    confidence aggregates that were already computed by _aggregate_per_sweep_value.
+
+    Args:
+        results: List of all run results
+        confidence_level: Confidence level for intervals
+        base_dir: Base artifact directory
+        sweep_mode: Sweep mode (repeated or independent)
+    """
+    import json
+    from collections import defaultdict
+
+    from aiperf.common.aiperf_logger import AIPerfLogger
+    from aiperf.exporters.aggregate import (
+        AggregateExporterConfig,
+        AggregateSweepCsvExporter,
+        AggregateSweepJsonExporter,
+    )
+    from aiperf.orchestrator.aggregation.base import AggregateResult
+    from aiperf.orchestrator.aggregation.sweep import SweepAggregation
+
+    logger = AIPerfLogger(__name__)
+
+    logger.info("Computing sweep-level aggregates...")
+
+    # Group results by concurrency value to get the list of sweep values
+    results_by_value: dict[int, list[RunResult]] = defaultdict(list)
+    for result in results:
+        if "concurrency" in result.metadata:
+            concurrency = result.metadata["concurrency"]
+            results_by_value[concurrency].append(result)
+
+    if not results_by_value:
+        logger.warning("No sweep results found with concurrency metadata.")
+        return
+
+    sweep_values = sorted(results_by_value.keys())
+
+    # Read per-value aggregate statistics from the files we just wrote
+    per_value_stats = {}
+    for concurrency_value in sweep_values:
+        # Determine aggregate file path based on sweep mode
+        if sweep_mode == "repeated":
+            agg_file = (
+                base_dir
+                / "aggregate"
+                / f"concurrency_{concurrency_value}"
+                / "profile_export_aiperf_aggregate.json"
+            )
+        else:  # independent
+            agg_file = (
+                base_dir
+                / f"concurrency_{concurrency_value}"
+                / "aggregate"
+                / "profile_export_aiperf_aggregate.json"
+            )
+
+        if not agg_file.exists():
+            logger.warning(
+                f"Aggregate file not found for concurrency={concurrency_value}: {agg_file}"
+            )
+            continue
+
+        # Load the aggregate JSON
+        with open(agg_file) as f:
+            agg_data = json.load(f)
+
+        # Extract metrics
+        per_value_stats[concurrency_value] = agg_data.get("metrics", {})
+
+    if not per_value_stats:
+        logger.warning("No per-value aggregate statistics found.")
+        return
+
+    # Compute sweep aggregation
+    sweep_dict = SweepAggregation.compute(per_value_stats, sweep_values)
+
+    # Add sweep mode and confidence level to metadata
+    sweep_dict["metadata"]["sweep_mode"] = sweep_mode
+    sweep_dict["metadata"]["confidence_level"] = confidence_level
+    sweep_dict["metadata"]["aggregation_type"] = "sweep"
+
+    # Determine number of trials per value
+    num_trials = len(results_by_value[sweep_values[0]])
+    sweep_dict["metadata"]["num_trials_per_value"] = num_trials
+
+    # Count total runs and successful runs
+    total_runs = len(results)
+    successful_runs = len([r for r in results if r.success])
+    failed_run_details = [
+        {
+            "label": r.label,
+            "error": str(r.error) if hasattr(r, "error") else "Unknown error",
+        }
+        for r in results
+        if not r.success
+    ]
+
+    # Convert dict to AggregateResult for export
+    sweep_result = AggregateResult(
+        aggregation_type="sweep",
+        num_runs=total_runs,
+        num_successful_runs=successful_runs,
+        failed_runs=failed_run_details,
+        metadata=sweep_dict["metadata"],
+        metrics=sweep_dict["per_value_metrics"],
+    )
+
+    # Store additional sweep-specific data in metadata
+    sweep_result.metadata["best_configurations"] = sweep_dict["best_configurations"]
+    sweep_result.metadata["pareto_optimal"] = sweep_dict["pareto_optimal"]
+    sweep_result.metadata["trends"] = sweep_dict["trends"]
+
+    # Determine output directory based on sweep mode
+    if sweep_mode == "repeated":
+        # Repeated: base_dir/aggregate/sweep_aggregate/
+        sweep_dir = base_dir / "aggregate" / "sweep_aggregate"
+    else:  # independent
+        # Independent: base_dir/sweep_aggregate/
+        sweep_dir = base_dir / "sweep_aggregate"
+
+    # Create exporter config
+    exporter_config = AggregateExporterConfig(
+        result=sweep_result,
+        output_dir=sweep_dir,
+    )
+
+    # Export artifacts
+    import asyncio
+
+    async def export_artifacts():
+        """Export sweep aggregate artifacts asynchronously."""
+        await asyncio.to_thread(sweep_dir.mkdir, parents=True, exist_ok=True)
+
+        json_exporter = AggregateSweepJsonExporter(exporter_config)
+        csv_exporter = AggregateSweepCsvExporter(exporter_config)
+
+        json_path, csv_path = await asyncio.gather(
+            json_exporter.export(),
+            csv_exporter.export(),
+        )
+
+        return json_path, csv_path
+
+    json_path, csv_path = asyncio.run(export_artifacts())
+
+    logger.info(f"  Sweep JSON: {json_path}")
+    logger.info(f"  Sweep CSV: {csv_path}")
+
+    # Log best configurations
+    best_configs = sweep_dict.get("best_configurations", {})
+    if best_configs:
+        logger.info("")
+        logger.info("Best Configurations:")
+        if "best_throughput" in best_configs:
+            best_throughput = best_configs["best_throughput"]
+            logger.info(
+                f"  Best throughput: concurrency={best_throughput['value']} "
+                f"({best_throughput['metric']:.2f} {best_throughput['unit']})"
+            )
+        if "best_latency_p99" in best_configs:
+            best_latency = best_configs["best_latency_p99"]
+            logger.info(
+                f"  Best latency (p99): concurrency={best_latency['value']} "
+                f"({best_latency['metric']:.2f} {best_latency['unit']})"
+            )
+
+    # Log Pareto optimal points
+    pareto_optimal = sweep_dict.get("pareto_optimal", [])
+    if pareto_optimal:
+        logger.info(f"  Pareto optimal points: {pareto_optimal}")
 
 
 def _print_aggregate_summary(

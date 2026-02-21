@@ -12,10 +12,18 @@ from aiperf.exporters.aggregate.aggregate_confidence_csv_exporter import (
 from aiperf.exporters.aggregate.aggregate_confidence_json_exporter import (
     AggregateConfidenceJsonExporter,
 )
+from aiperf.exporters.aggregate.aggregate_sweep_csv_exporter import (
+    AggregateSweepCsvExporter,
+)
+from aiperf.exporters.aggregate.aggregate_sweep_json_exporter import (
+    AggregateSweepJsonExporter,
+)
 
 __all__ = [
     "AggregateBaseExporter",
     "AggregateConfidenceCsvExporter",
     "AggregateConfidenceJsonExporter",
+    "AggregateSweepCsvExporter",
+    "AggregateSweepJsonExporter",
     "AggregateExporterConfig",
 ]

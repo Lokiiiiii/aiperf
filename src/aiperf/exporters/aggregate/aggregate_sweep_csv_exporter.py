@@ -56,9 +56,29 @@ class AggregateSweepCsvExporter(AggregateBaseExporter):
             # Build header: parameter_value, metric1_mean, metric1_std, ..., metric2_mean, metric2_std, ...
             header = ["parameter_value"]
 
+            # Get parameter values in canonical order from metadata if available
+            parameter_values = self._result.metadata.get("parameter_values", [])
+            if parameter_values:
+                # Use canonical order from metadata
+                value_keys = [
+                    str(v) for v in parameter_values if str(v) in per_value_metrics
+                ]
+            else:
+                # Fallback: sort numerically (try float, fallback to string)
+                def numeric_sort_key(k):
+                    try:
+                        return (0, float(k))  # Numeric values sort first
+                    except (ValueError, TypeError):
+                        return (1, k)  # Non-numeric values sort last as strings
+
+                value_keys = sorted(per_value_metrics.keys(), key=numeric_sort_key)
+
             # Get all metric names from first value
-            first_value = sorted(per_value_metrics.keys(), key=int)[0]
-            metric_names = sorted(per_value_metrics[first_value].keys())
+            if value_keys:
+                first_value = value_keys[0]
+                metric_names = sorted(per_value_metrics[first_value].keys())
+            else:
+                metric_names = []
 
             # Add columns for each metric's statistics
             for metric_name in metric_names:
@@ -74,8 +94,8 @@ class AggregateSweepCsvExporter(AggregateBaseExporter):
 
             writer.writerow(header)
 
-            # Write data rows (one row per sweep value)
-            for value_str in sorted(per_value_metrics.keys(), key=int):
+            # Write data rows (one row per sweep value in canonical order)
+            for value_str in value_keys:
                 row = [value_str]
                 metrics = per_value_metrics[value_str]
 

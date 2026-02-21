@@ -613,9 +613,16 @@ def _compute_sweep_aggregates(
         logger.warning("No per-value aggregate statistics found.")
         return
 
-    # Compute sweep aggregation with parameter name
+    # Filter sweep_values to only those with aggregate stats
+    sweep_values_filtered = [v for v in sweep_values if v in per_value_stats]
+
+    if not sweep_values_filtered:
+        logger.warning("No valid sweep values with aggregate statistics.")
+        return
+
+    # Compute sweep aggregation with parameter name using filtered values
     sweep_dict = SweepAggregation.compute(
-        per_value_stats, sweep_values, sweep_param_name
+        per_value_stats, sweep_values_filtered, sweep_param_name
     )
 
     # Add sweep mode and confidence level to metadata
@@ -623,8 +630,8 @@ def _compute_sweep_aggregates(
     sweep_dict["metadata"]["confidence_level"] = confidence_level
     sweep_dict["metadata"]["aggregation_type"] = "sweep"
 
-    # Determine number of trials per value
-    num_trials = len(results_by_value[sweep_values[0]])
+    # Determine number of trials per value (use first filtered value)
+    num_trials = len(results_by_value[sweep_values_filtered[0]])
     sweep_dict["metadata"]["num_trials_per_value"] = num_trials
 
     # Count total runs and successful runs

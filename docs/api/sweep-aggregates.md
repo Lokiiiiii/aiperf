@@ -35,6 +35,10 @@ artifacts/
 
 ```json
 {
+  "aggregation_type": "sweep",
+  "num_profile_runs": 15,
+  "num_successful_runs": 15,
+  "failed_runs": [],
   "metadata": { ... },
   "per_value_metrics": { ... },
   "best_configurations": { ... },
@@ -43,6 +47,20 @@ artifacts/
 }
 ```
 
+**Top-Level Fields:**
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `aggregation_type` | string | Always `"sweep"` for sweep aggregates |
+| `num_profile_runs` | int | Total number of profile runs executed |
+| `num_successful_runs` | int | Number of successful profile runs |
+| `failed_runs` | array | List of failed runs with error details (empty if all succeeded) |
+| `metadata` | object | Sweep configuration and execution metadata |
+| `per_value_metrics` | object | Aggregated metrics for each parameter value |
+| `best_configurations` | object | Best parameter values for key metrics |
+| `pareto_optimal` | array | List of Pareto optimal parameter values |
+| `trends` | object | Trend analysis for metrics across parameter values |
+
 ### Metadata Section
 
 Contains information about the sweep configuration and execution.
@@ -50,7 +68,6 @@ Contains information about the sweep configuration and execution.
 ```json
 {
   "metadata": {
-    "aggregation_type": "sweep",
     "parameter_name": "concurrency",
     "parameter_values": [10, 20, 30, 40],
     "num_values": 4,
@@ -66,7 +83,6 @@ Contains information about the sweep configuration and execution.
 
 | Field | Type | Description |
 |-------|------|-------------|
-| `aggregation_type` | string | Always `"sweep"` for sweep aggregates |
 | `parameter_name` | string | Name of the parameter being swept (e.g., `"concurrency"`) |
 | `parameter_values` | array[int] | List of parameter values tested |
 | `num_values` | int | Number of parameter values in the sweep |

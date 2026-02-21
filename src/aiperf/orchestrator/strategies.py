@@ -26,6 +26,22 @@ __all__ = [
 ]
 
 
+def _sanitize_label(label: str) -> str:
+    """Sanitize label to prevent path traversal attacks.
+
+    Args:
+        label: Raw label string
+
+    Returns:
+        Sanitized label safe for filesystem paths
+    """
+    # Remove any path separators and parent directory references
+    sanitized = re.sub(r"[/\\]|\.\.", "", label)
+    # Remove any other potentially dangerous characters
+    sanitized = re.sub(r'[<>:"|?*]', "", sanitized)
+    return sanitized
+
+
 class ExecutionStrategy(ABC):
     """Base class for execution strategies.
 
@@ -242,22 +258,7 @@ class FixedTrialsStrategy(ExecutionStrategy):
         """
         label = f"trial_{run_index + 1:04d}"
         # Sanitize label to prevent path traversal
-        return self._sanitize_label(label)
-
-    def _sanitize_label(self, label: str) -> str:
-        """Sanitize label to prevent path traversal attacks.
-
-        Args:
-            label: Raw label string
-
-        Returns:
-            Sanitized label safe for filesystem paths
-        """
-        # Remove any path separators and parent directory references
-        sanitized = re.sub(r"[/\\]|\.\.", "", label)
-        # Remove any other potentially dangerous characters
-        sanitized = re.sub(r'[<>:"|?*]', "", sanitized)
-        return sanitized
+        return _sanitize_label(label)
 
     def get_cooldown_seconds(self) -> float:
         """Return configured cooldown duration."""
@@ -592,22 +593,7 @@ class ParameterSweepStrategy(ExecutionStrategy):
         value = self.parameter_values[run_index]
         label = f"{self.parameter_name}_{value}"
         # Sanitize label to prevent path traversal
-        return self._sanitize_label(label)
-
-    def _sanitize_label(self, label: str) -> str:
-        """Sanitize label to prevent path traversal attacks.
-
-        Args:
-            label: Raw label string
-
-        Returns:
-            Sanitized label safe for filesystem paths
-        """
-        # Remove any path separators and parent directory references
-        sanitized = re.sub(r"[/\\]|\.\.", "", label)
-        # Remove any other potentially dangerous characters
-        sanitized = re.sub(r'[<>:"|?*]', "", sanitized)
-        return sanitized
+        return _sanitize_label(label)
 
     def get_cooldown_seconds(self) -> float:
         """Return cooldown between parameter values."""

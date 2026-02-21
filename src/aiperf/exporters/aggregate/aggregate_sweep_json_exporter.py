@@ -1,0 +1,86 @@
+# SPDX-FileCopyrightText: Copyright (c) 2025-2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+"""JSON exporter for sweep aggregate results."""
+
+import json
+
+from aiperf.exporters.aggregate.aggregate_base_exporter import AggregateBaseExporter
+
+
+class AggregateSweepJsonExporter(AggregateBaseExporter):
+    """Exports sweep aggregate results to JSON format.
+
+    The sweep aggregate contains:
+    - metadata: Parameter name, values, counts
+    - per_value_metrics: Metrics for each sweep value
+    - best_configurations: Best values for key metrics
+    - pareto_optimal: List of Pareto optimal sweep values
+    - trends: Trend analysis for key metrics
+
+    Design:
+    - Uses the dict returned by SweepAggregation.compute()
+    - Serializes directly to JSON (no Pydantic models needed)
+    - Ensures consistency with confidence aggregate format
+    """
+
+    def get_file_name(self) -> str:
+        """Return JSON file name.
+
+        Returns:
+            str: "profile_export_aiperf_sweep.json"
+        """
+        return "profile_export_aiperf_sweep.json"
+
+    def _generate_content(self) -> str:
+        """Generate JSON content from sweep aggregate result.
+
+        The result contains:
+        - result.metadata: Contains sweep metadata + best_configurations, pareto_optimal, trends
+        - result.metrics: Contains per_value_metrics (the actual metrics dict)
+
+        We need to reconstruct the structure expected by tests:
+        {
+            "metadata": {...},
+            "per_value_metrics": {...},
+            "best_configurations": {...},
+            "pareto_optimal": [...],
+            "trends": {...}
+        }
+
+        Returns:
+            str: JSON content string
+        """
+        # Build the output structure
+        output = {}
+
+        # Extract metadata (excluding the sweep-specific sections)
+        metadata = {}
+        for key, value in self._result.metadata.items():
+            if key not in ["best_configurations", "pareto_optimal", "trends"]:
+                metadata[key] = value
+
+        # Add AggregateResult fields to metadata
+        metadata["aggregation_type"] = self._result.aggregation_type
+        metadata["num_profile_runs"] = self._result.num_runs
+        metadata["num_successful_runs"] = self._result.num_successful_runs
+
+        # Add failed runs
+        if self._result.failed_runs:
+            metadata["failed_runs"] = self._result.failed_runs
+        else:
+            metadata["failed_runs"] = []
+
+        output["metadata"] = metadata
+
+        # Add per_value_metrics (stored in result.metrics)
+        output["per_value_metrics"] = self._result.metrics
+
+        # Add sweep-specific sections from metadata
+        output["best_configurations"] = self._result.metadata.get(
+            "best_configurations", {}
+        )
+        output["pareto_optimal"] = self._result.metadata.get("pareto_optimal", [])
+        output["trends"] = self._result.metadata.get("trends", {})
+
+        # Serialize to JSON with indentation
+        return json.dumps(output, indent=2, ensure_ascii=False)

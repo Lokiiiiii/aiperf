@@ -595,6 +595,30 @@ class LoadGeneratorConfig(BaseConfig):
         ),
     ] = True
 
+    def get_sweep_parameter(self) -> tuple[str, list] | None:
+        """Detect which parameter is being swept (if any).
+
+        This method checks all sweepable parameters to determine if any
+        are configured as lists, which indicates a parameter sweep.
+
+        Returns:
+            Tuple of (parameter_name, values) if sweeping, None otherwise.
+            For example: ("concurrency", [10, 20, 30])
+
+        Note:
+            Currently only concurrency supports sweep mode. Future parameters
+            can be added here as they become sweepable.
+        """
+        # Check concurrency
+        if isinstance(self.concurrency, list):
+            return ("concurrency", self.concurrency)
+
+        # Future: Add other sweepable parameters here
+        # if isinstance(self.request_rate, list):
+        #     return ("request_rate", self.request_rate)
+
+        return None
+
     def disable_warmup(self) -> None:
         """Disable all warmup-related parameters.
 

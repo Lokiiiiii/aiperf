@@ -200,12 +200,14 @@ class SweepAggregation:
     def compute(
         per_value_stats: dict[int, dict],
         sweep_values: list[int],
+        parameter_name: str = "concurrency",
     ) -> dict:
         """Compute sweep-level aggregate statistics.
 
         Args:
-            per_value_stats: Statistics for each sweep value (concurrency_value -> confidence stats)
+            per_value_stats: Statistics for each sweep value (value -> confidence stats)
             sweep_values: List of sweep values in order
+            parameter_name: Name of the parameter being swept (default: "concurrency")
 
         Returns:
             Dictionary with:
@@ -220,7 +222,7 @@ class SweepAggregation:
             ...     10: {"request_throughput_avg": {"mean": 100, "std": 5, ...}},
             ...     20: {"request_throughput_avg": {"mean": 180, "std": 8, ...}},
             ... }
-            >>> result = SweepAggregation.compute(per_value_stats, [10, 20])
+            >>> result = SweepAggregation.compute(per_value_stats, [10, 20], "concurrency")
             >>> result["metadata"]["num_values"]
             2
             >>> result["best_configurations"]["best_throughput"]["value"]
@@ -228,7 +230,7 @@ class SweepAggregation:
         """
         # Build metadata section
         metadata = {
-            "parameter_name": "concurrency",
+            "parameter_name": parameter_name,
             "parameter_values": sweep_values,
             "num_values": len(sweep_values),
         }

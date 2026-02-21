@@ -106,14 +106,22 @@ def sample_sweep_aggregate():
         },
     }
 
-    return AggregateResult(
+    # Create AggregateResult matching the structure from cli_runner
+    result = AggregateResult(
         aggregation_type="sweep",
         num_runs=15,  # 3 values × 5 trials
         num_successful_runs=15,
         failed_runs=[],
-        metadata={},
-        metrics=sweep_data,
+        metadata=sweep_data["metadata"].copy(),
+        metrics=sweep_data["per_value_metrics"],
     )
+
+    # Store additional sweep-specific data in metadata (like cli_runner does)
+    result.metadata["best_configurations"] = sweep_data["best_configurations"]
+    result.metadata["pareto_optimal"] = sweep_data["pareto_optimal"]
+    result.metadata["trends"] = sweep_data["trends"]
+
+    return result
 
 
 class TestAggregateSweepJsonExporter:
@@ -483,14 +491,20 @@ class TestAggregateSweepCsvExporter:
             "trends": {},
         }
 
+        # Create AggregateResult matching the structure from cli_runner
         aggregate = AggregateResult(
             aggregation_type="sweep",
             num_runs=5,
             num_successful_runs=5,
             failed_runs=[],
-            metadata={},
-            metrics=sweep_data,
+            metadata=sweep_data["metadata"].copy(),
+            metrics=sweep_data["per_value_metrics"],
         )
+
+        # Store additional sweep-specific data in metadata (like cli_runner does)
+        aggregate.metadata["best_configurations"] = sweep_data["best_configurations"]
+        aggregate.metadata["pareto_optimal"] = sweep_data["pareto_optimal"]
+        aggregate.metadata["trends"] = sweep_data["trends"]
 
         output_dir = tmp_path / "sweep_aggregate"
         config = AggregateExporterConfig(result=aggregate, output_dir=output_dir)
@@ -553,14 +567,22 @@ class TestSweepExportersIntegration:
             "trends": {},
         }
 
+        # Create AggregateResult matching the structure from cli_runner
         aggregate = AggregateResult(
             aggregation_type="sweep",
             num_runs=1,
             num_successful_runs=1,
             failed_runs=[],
-            metadata={},
-            metrics=minimal_sweep_data,
+            metadata=minimal_sweep_data["metadata"].copy(),
+            metrics=minimal_sweep_data["per_value_metrics"],
         )
+
+        # Store additional sweep-specific data in metadata (like cli_runner does)
+        aggregate.metadata["best_configurations"] = minimal_sweep_data[
+            "best_configurations"
+        ]
+        aggregate.metadata["pareto_optimal"] = minimal_sweep_data["pareto_optimal"]
+        aggregate.metadata["trends"] = minimal_sweep_data["trends"]
 
         output_dir = tmp_path / "sweep_aggregate"
         config = AggregateExporterConfig(result=aggregate, output_dir=output_dir)

@@ -26,8 +26,8 @@ def _validate_ui_compatibility(
     Raises:
         ValueError: If dashboard UI is explicitly set with parameter sweeps.
     """
-    # Check if concurrency is a list (parameter sweep)
-    is_sweep = isinstance(user_config.loadgen.concurrency, list)
+    # Check if parameter sweep is enabled
+    is_sweep = user_config.loadgen.get_sweep_parameter() is not None
 
     # Check if dashboard UI was explicitly set by user
     if (
@@ -56,7 +56,7 @@ def run_system_controller(
     _validate_ui_compatibility(user_config, service_config)
 
     # Check if multi-run mode or parameter sweep is enabled
-    is_sweep = isinstance(user_config.loadgen.concurrency, list)
+    is_sweep = user_config.loadgen.get_sweep_parameter() is not None
     is_multi_run = user_config.loadgen.num_profile_runs > 1
 
     if is_multi_run or is_sweep:
@@ -215,20 +215,23 @@ def _run_multi_benchmark(
         )
 
     # Detect mode
-    is_sweep = isinstance(user_config.loadgen.concurrency, list)
+    sweep_info = user_config.loadgen.get_sweep_parameter()
+    is_sweep = sweep_info is not None
     is_confidence = user_config.loadgen.num_profile_runs > 1
 
     # Print banner based on mode
     logger.info("=" * 80)
     if is_sweep and is_confidence:
+        param_name, param_values = sweep_info
         logger.info("Starting Parameter Sweep with Confidence Trials")
-        logger.info(f"  Parameter: concurrency = {user_config.loadgen.concurrency}")
+        logger.info(f"  Parameter: {param_name} = {param_values}")
         logger.info(f"  Sweep mode: {user_config.loadgen.parameter_sweep_mode}")
         logger.info(f"  Trials per value: {user_config.loadgen.num_profile_runs}")
         logger.info(f"  Confidence level: {user_config.loadgen.confidence_level:.0%}")
     elif is_sweep:
+        param_name, param_values = sweep_info
         logger.info("Starting Parameter Sweep")
-        logger.info(f"  Parameter: concurrency = {user_config.loadgen.concurrency}")
+        logger.info(f"  Parameter: {param_name} = {param_values}")
         logger.info(
             f"  Sweep cooldown: {user_config.loadgen.parameter_sweep_cooldown_seconds}s"
         )
@@ -263,12 +266,18 @@ def _run_multi_benchmark(
         logger.warning(f"Failed runs: {', '.join(r.label for r in failed_runs)}")
     logger.info("=" * 80)
 
-    # Check if this is sweep + confidence mode (multiple concurrency values)
-    concurrency_values = set()
+    # Check if this is sweep + confidence mode (detect sweep parameter values in metadata)
+    sweep_param_values = set()
     for r in results:
-        if "concurrency" in r.metadata:
-            concurrency_values.add(r.metadata["concurrency"])
-    has_sweep_metadata = len(concurrency_values) > 1
+        # Check for any sweep parameter in metadata (currently only concurrency, but future-proof)
+        for key in r.metadata:
+            if key in [
+                "concurrency",
+                "request_rate",
+            ]:  # Add more as they become sweepable
+                sweep_param_values.add(r.metadata[key])
+                break
+    has_sweep_metadata = len(sweep_param_values) > 1
 
     # For sweep-only mode, we're done (no aggregation needed for single runs per value)
     if is_sweep and not is_confidence:
@@ -541,41 +550,55 @@ def _compute_sweep_aggregates(
 
     logger.info("Computing sweep-level aggregates...")
 
-    # Group results by concurrency value to get the list of sweep values
+    # Detect which parameter is being swept from results metadata
+    sweep_param_name = None
     results_by_value: dict[int, list[RunResult]] = defaultdict(list)
+
     for result in results:
-        if "concurrency" in result.metadata:
-            concurrency = result.metadata["concurrency"]
-            results_by_value[concurrency].append(result)
+        # Check for sweep parameter in metadata (currently concurrency, but future-proof)
+        for key in ["concurrency", "request_rate"]:  # Add more as they become sweepable
+            if key in result.metadata:
+                sweep_param_name = key
+                param_value = result.metadata[key]
+                results_by_value[param_value].append(result)
+                break
 
     if not results_by_value:
-        logger.warning("No sweep results found with concurrency metadata.")
+        logger.warning(
+            "No sweep results found with parameter metadata. "
+            "This may indicate a problem with sweep execution. "
+            "Check that a sweepable parameter was specified as a list (e.g., --concurrency 10,20,30)."
+        )
+        return
+
+    if not sweep_param_name:
+        logger.warning("Could not determine sweep parameter name from results.")
         return
 
     sweep_values = sorted(results_by_value.keys())
 
     # Read per-value aggregate statistics from the files we just wrote
     per_value_stats = {}
-    for concurrency_value in sweep_values:
+    for param_value in sweep_values:
         # Determine aggregate file path based on sweep mode
         if sweep_mode == "repeated":
             agg_file = (
                 base_dir
                 / "aggregate"
-                / f"concurrency_{concurrency_value}"
+                / f"{sweep_param_name}_{param_value}"
                 / "profile_export_aiperf_aggregate.json"
             )
         else:  # independent
             agg_file = (
                 base_dir
-                / f"concurrency_{concurrency_value}"
+                / f"{sweep_param_name}_{param_value}"
                 / "aggregate"
                 / "profile_export_aiperf_aggregate.json"
             )
 
         if not agg_file.exists():
             logger.warning(
-                f"Aggregate file not found for concurrency={concurrency_value}: {agg_file}"
+                f"Aggregate file not found for {sweep_param_name}={param_value}: {agg_file}"
             )
             continue
 
@@ -584,14 +607,16 @@ def _compute_sweep_aggregates(
             agg_data = json.load(f)
 
         # Extract metrics
-        per_value_stats[concurrency_value] = agg_data.get("metrics", {})
+        per_value_stats[param_value] = agg_data.get("metrics", {})
 
     if not per_value_stats:
         logger.warning("No per-value aggregate statistics found.")
         return
 
-    # Compute sweep aggregation
-    sweep_dict = SweepAggregation.compute(per_value_stats, sweep_values)
+    # Compute sweep aggregation with parameter name
+    sweep_dict = SweepAggregation.compute(
+        per_value_stats, sweep_values, sweep_param_name
+    )
 
     # Add sweep mode and confidence level to metadata
     sweep_dict["metadata"]["sweep_mode"] = sweep_mode

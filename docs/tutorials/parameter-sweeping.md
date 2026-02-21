@@ -40,7 +40,7 @@ aiperf profile --concurrency 10,20,30,40 --ui simple ...
 ```
 
 You'll see an informational message:
-```
+```text
 Parameter sweep mode: UI automatically set to 'simple' (use '--ui none' to disable UI output)
 ```
 

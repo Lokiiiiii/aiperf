@@ -59,10 +59,23 @@ class AggregateSweepCsvExporter(AggregateBaseExporter):
             # Get parameter values in canonical order from metadata if available
             parameter_values = self._result.metadata.get("parameter_values", [])
             if parameter_values:
-                # Use canonical order from metadata
-                value_keys = [
-                    str(v) for v in parameter_values if str(v) in per_value_metrics
-                ]
+                # Use canonical order from metadata, matching both str and numeric forms
+                value_keys = []
+                for v in parameter_values:
+                    # Try both string and numeric forms to match per_value_metrics keys
+                    if str(v) in per_value_metrics or v in per_value_metrics:
+                        value_keys.append(str(v))
+
+                # If no matches found, fall back to numeric sort
+                if not value_keys:
+
+                    def numeric_sort_key(k):
+                        try:
+                            return (0, float(k))  # Numeric values sort first
+                        except (ValueError, TypeError):
+                            return (1, k)  # Non-numeric values sort last as strings
+
+                    value_keys = sorted(per_value_metrics.keys(), key=numeric_sort_key)
             else:
                 # Fallback: sort numerically (try float, fallback to string)
                 def numeric_sort_key(k):
@@ -73,10 +86,12 @@ class AggregateSweepCsvExporter(AggregateBaseExporter):
 
                 value_keys = sorted(per_value_metrics.keys(), key=numeric_sort_key)
 
-            # Get all metric names from first value
+            # Get all metric names from union of all values (not just first)
             if value_keys:
-                first_value = value_keys[0]
-                metric_names = sorted(per_value_metrics[first_value].keys())
+                all_metric_names = set()
+                for value_str in value_keys:
+                    all_metric_names.update(per_value_metrics[value_str].keys())
+                metric_names = sorted(all_metric_names)
             else:
                 metric_names = []
 

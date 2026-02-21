@@ -518,12 +518,12 @@ class ParameterSweepStrategy(ExecutionStrategy):
         base_dir/concurrency_20/
 
         Composed with FixedTrialsStrategy (repeated mode):
-        base_dir/profile_runs/run_0001/concurrency_10/
-        base_dir/profile_runs/run_0001/concurrency_20/
+        base_dir/profile_runs/trial_0001/concurrency_10/
+        base_dir/profile_runs/trial_0001/concurrency_20/
 
         Composed with FixedTrialsStrategy (independent mode):
-        base_dir/concurrency_10/profile_runs/run_0001/
-        base_dir/concurrency_20/profile_runs/run_0001/
+        base_dir/concurrency_10/profile_runs/trial_0001/
+        base_dir/concurrency_20/profile_runs/trial_0001/
 
         Args:
             base_dir: Base artifact directory (Path)

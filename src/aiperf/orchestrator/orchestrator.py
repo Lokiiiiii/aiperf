@@ -81,7 +81,7 @@ class MultiRunOrchestrator:
             return self._execute_strategy(base_config, strategy)
 
         # Auto-detect mode from configuration
-        has_sweep = isinstance(base_config.loadgen.concurrency, list)
+        has_sweep = base_config.loadgen.get_sweep_parameter() is not None
         has_confidence = base_config.loadgen.num_profile_runs > 1
 
         if has_sweep and has_confidence:
@@ -119,12 +119,25 @@ class MultiRunOrchestrator:
 
         Returns:
             ParameterSweepStrategy configured from config
+
+        Raises:
+            ValueError: If no sweep parameter is detected in config
         """
         from aiperf.orchestrator.strategies import ParameterSweepStrategy
 
+        sweep_info = config.loadgen.get_sweep_parameter()
+        if not sweep_info:
+            raise ValueError(
+                "No sweep parameter detected in configuration. "
+                "To enable parameter sweep, provide a parameter as a comma-separated list. "
+                "Example: --concurrency 10,20,30"
+            )
+
+        param_name, param_values = sweep_info
+
         return ParameterSweepStrategy(
-            parameter_name="concurrency",
-            parameter_values=config.loadgen.concurrency,
+            parameter_name=param_name,
+            parameter_values=param_values,
             cooldown_seconds=config.loadgen.parameter_sweep_cooldown_seconds,
             same_seed=config.loadgen.parameter_sweep_same_seed,
             auto_set_seed=True,

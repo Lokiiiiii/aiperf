@@ -38,8 +38,12 @@ class AggregateSweepJsonExporter(AggregateBaseExporter):
         - result.metadata: Contains sweep metadata + best_configurations, pareto_optimal, trends
         - result.metrics: Contains per_value_metrics (the actual metrics dict)
 
-        We need to reconstruct the structure expected by tests:
+        Output structure:
         {
+            "aggregation_type": "sweep",
+            "num_profile_runs": 15,
+            "num_successful_runs": 15,
+            "failed_runs": [],
             "metadata": {...},
             "per_value_metrics": {...},
             "best_configurations": {...},
@@ -53,22 +57,19 @@ class AggregateSweepJsonExporter(AggregateBaseExporter):
         # Build the output structure
         output = {}
 
+        # Add AggregateResult fields at top level
+        output["aggregation_type"] = self._result.aggregation_type
+        output["num_profile_runs"] = self._result.num_runs
+        output["num_successful_runs"] = self._result.num_successful_runs
+        output["failed_runs"] = (
+            self._result.failed_runs if self._result.failed_runs else []
+        )
+
         # Extract metadata (excluding the sweep-specific sections)
         metadata = {}
         for key, value in self._result.metadata.items():
             if key not in ["best_configurations", "pareto_optimal", "trends"]:
                 metadata[key] = value
-
-        # Add AggregateResult fields to metadata
-        metadata["aggregation_type"] = self._result.aggregation_type
-        metadata["num_profile_runs"] = self._result.num_runs
-        metadata["num_successful_runs"] = self._result.num_successful_runs
-
-        # Add failed runs
-        if self._result.failed_runs:
-            metadata["failed_runs"] = self._result.failed_runs
-        else:
-            metadata["failed_runs"] = []
 
         output["metadata"] = metadata
 

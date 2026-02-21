@@ -33,13 +33,12 @@ class AggregateSweepCsvExporter(AggregateBaseExporter):
     def _generate_content(self) -> str:
         """Generate CSV content from sweep aggregate result.
 
-        The result contains:
-        - result.metadata: Contains sweep metadata + best_configurations, pareto_optimal, trends
-        - result.metrics: Contains per_value_metrics (the actual metrics dict)
-
-        Format (long format for easy analysis):
-        Each row represents one metric for one sweep value:
-        concurrency,metric,mean,std,min,max,cv,se,ci_low,ci_high,unit
+        Format: Multiple sections separated by blank lines:
+        1. Per-value metrics table (WIDE format - one row per sweep value, metrics as columns)
+        2. Best configurations section
+        3. Pareto optimal points section
+        4. Trends section
+        5. Metadata section
 
         Returns:
             str: CSV content string
@@ -50,47 +49,129 @@ class AggregateSweepCsvExporter(AggregateBaseExporter):
         # Get parameter name from metadata (default to "concurrency")
         param_name = self._result.metadata.get("parameter_name", "concurrency")
 
-        # Write header
-        header = [
-            param_name,
-            "metric",
-            "mean",
-            "std",
-            "min",
-            "max",
-            "cv",
-            "se",
-            "ci_low",
-            "ci_high",
-            "unit",
-        ]
-        writer.writerow(header)
-
-        # Per-value metrics are in result.metrics
+        # Section 1: Per-value metrics table (WIDE format)
         per_value_metrics = self._result.metrics
 
-        # Write data rows (one row per metric per sweep value)
-        for value in sorted(per_value_metrics.keys(), key=int):
-            metrics = per_value_metrics[value]
+        if per_value_metrics:
+            # Build header: parameter_value, metric1_mean, metric1_std, ..., metric2_mean, metric2_std, ...
+            header = ["parameter_value"]
 
-            for metric_name in sorted(metrics.keys()):
-                metric_data = metrics[metric_name]
+            # Get all metric names from first value
+            first_value = sorted(per_value_metrics.keys(), key=int)[0]
+            metric_names = sorted(per_value_metrics[first_value].keys())
 
-                if isinstance(metric_data, dict):
-                    row = [
-                        value,
-                        metric_name,
-                        self._format_number(metric_data.get("mean")),
-                        self._format_number(metric_data.get("std")),
-                        self._format_number(metric_data.get("min")),
-                        self._format_number(metric_data.get("max")),
-                        self._format_number(metric_data.get("cv"), decimals=4),
-                        self._format_number(metric_data.get("se")),
-                        self._format_number(metric_data.get("ci_low")),
-                        self._format_number(metric_data.get("ci_high")),
-                        metric_data.get("unit", ""),
+            # Add columns for each metric's statistics
+            for metric_name in metric_names:
+                header.extend(
+                    [
+                        f"{metric_name}_mean",
+                        f"{metric_name}_std",
+                        f"{metric_name}_min",
+                        f"{metric_name}_max",
+                        f"{metric_name}_cv",
                     ]
-                    writer.writerow(row)
+                )
+
+            writer.writerow(header)
+
+            # Write data rows (one row per sweep value)
+            for value_str in sorted(per_value_metrics.keys(), key=int):
+                row = [value_str]
+                metrics = per_value_metrics[value_str]
+
+                for metric_name in metric_names:
+                    metric_data = metrics.get(metric_name, {})
+                    if isinstance(metric_data, dict):
+                        row.extend(
+                            [
+                                self._format_number(metric_data.get("mean")),
+                                self._format_number(metric_data.get("std")),
+                                self._format_number(metric_data.get("min")),
+                                self._format_number(metric_data.get("max")),
+                                self._format_number(metric_data.get("cv"), decimals=4),
+                            ]
+                        )
+                    else:
+                        # If not a dict, fill with empty values
+                        row.extend(["", "", "", "", ""])
+
+                writer.writerow(row)
+
+        # Section 2: Best Configurations
+        writer.writerow([])  # Blank line
+        writer.writerow(["Best Configurations"])
+        best_configs = self._result.metadata.get("best_configurations", {})
+        if best_configs:
+            writer.writerow(["Configuration", "Value", "Metric", "Unit"])
+            for config_name, config_data in best_configs.items():
+                # Format config name: best_throughput -> Best Throughput
+                formatted_name = config_name.replace("_", " ").title()
+                writer.writerow(
+                    [
+                        formatted_name,
+                        config_data.get("value", ""),
+                        self._format_number(config_data.get("metric")),
+                        config_data.get("unit", ""),
+                    ]
+                )
+
+        # Section 3: Pareto Optimal Points
+        writer.writerow([])  # Blank line
+        writer.writerow(["Pareto Optimal Points"])
+        pareto_optimal = self._result.metadata.get("pareto_optimal", [])
+        if pareto_optimal:
+            writer.writerow([param_name])
+            for value in pareto_optimal:
+                writer.writerow([value])
+        else:
+            writer.writerow(["None"])
+
+        # Section 4: Trends
+        writer.writerow([])  # Blank line
+        writer.writerow(["Trends"])
+        trends = self._result.metadata.get("trends", {})
+        if trends:
+            for metric_name, trend_data in trends.items():
+                writer.writerow([f"Metric: {metric_name}"])
+
+                # Inflection Points
+                inflection_points = trend_data.get("inflection_points", [])
+                writer.writerow(["Inflection Points"])
+                if inflection_points:
+                    writer.writerow([param_name])
+                    for point in inflection_points:
+                        writer.writerow([point])
+                else:
+                    writer.writerow(["None"])
+
+                # Rate of Change
+                rate_of_change = trend_data.get("rate_of_change", [])
+                writer.writerow(["Rate of Change"])
+                if rate_of_change:
+                    writer.writerow(["Interval", "Rate"])
+                    for i, rate in enumerate(rate_of_change):
+                        writer.writerow(
+                            [f"Interval {i + 1}", self._format_number(rate)]
+                        )
+                else:
+                    writer.writerow(["None"])
+
+                writer.writerow([])  # Blank line between metrics
+
+        # Section 5: Metadata
+        writer.writerow([])  # Blank line
+        writer.writerow(["Metadata"])
+        writer.writerow(["Field", "Value"])
+        writer.writerow(["Aggregation Type", self._result.aggregation_type])
+        writer.writerow(["Parameter Name", param_name])
+        writer.writerow(
+            ["Parameter Values", str(self._result.metadata.get("parameter_values", []))]
+        )
+        writer.writerow(
+            ["Number of Values", self._result.metadata.get("num_values", 0)]
+        )
+        writer.writerow(["Number of Profile Runs", self._result.num_runs])
+        writer.writerow(["Number of Successful Runs", self._result.num_successful_runs])
 
         return buf.getvalue()
 

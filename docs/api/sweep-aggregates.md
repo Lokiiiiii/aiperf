@@ -19,7 +19,7 @@ When running parameter sweeps with AIPerf (e.g., `--concurrency 10,20,30`), the 
 
 Sweep aggregates are written to the `sweep_aggregate/` directory within your artifacts:
 
-```
+```text
 artifacts/
   {benchmark_name}/
     sweep_aggregate/
@@ -350,7 +350,7 @@ Number of Values,4
 
 Default mode where the full sweep is executed N times:
 
-```
+```text
 artifacts/
   {benchmark_name}/
     profile_runs/
@@ -388,7 +388,7 @@ artifacts/
 ```
 
 **Execution Pattern:**
-```
+```text
 Trial 1: [10 → 20 → 30]
 Trial 2: [10 → 20 → 30]
 Trial 3: [10 → 20 → 30]
@@ -443,7 +443,7 @@ Concurrency 30: [trial1, trial2, trial3]
 
 When `--num-profile-runs 1` (or omitted), no trial directories are created:
 
-```
+```text
 artifacts/
   {benchmark_name}/
     concurrency_10/

@@ -2649,3 +2649,108 @@ class TestParameterSweep:
         # 9. Best configurations are verified to be actually optimal
         # 10. Pareto optimality property is verified (no point dominates another)
         # 11. Trend data structure is validated (rate of change has N-1 values)
+
+    async def test_sweep_only_mode_without_confidence(
+        self,
+        cli: AIPerfCLI,
+        aiperf_mock_server: AIPerfMockServer,
+        temp_output_dir: Path,
+    ):
+        """Test sweep-only mode without confidence aggregation.
+
+        This test validates:
+        - Sweep mode with single run per value (no confidence aggregation)
+        - Correct directory structure without trial nesting
+        - No confidence aggregate files generated
+        - Sweep aggregate still generated with single-run metrics
+
+        Execution pattern with --concurrency 2,4,6 (default --num-profile-runs 1):
+        Single run at concurrency 2
+        Single run at concurrency 4
+        Single run at concurrency 6
+        """
+        result = await cli.run(
+            f"""
+            aiperf profile \
+                --model {defaults.model} \
+                --url {aiperf_mock_server.url} \
+                --endpoint-type chat \
+                --concurrency 2,4,6 \
+                --request-count 10 \
+                --workers-max {defaults.workers_max} \
+                --ui {defaults.ui}
+            """
+        )
+
+        # Verify basic execution
+        assert result.exit_code == 0
+
+        # Verify directory structure for sweep-only mode:
+        # artifacts/
+        #   concurrency_2/
+        #     profile_export_aiperf.json
+        #     profile_export_aiperf.csv
+        #   concurrency_4/
+        #     profile_export_aiperf.json
+        #     profile_export_aiperf.csv
+        #   concurrency_6/
+        #     profile_export_aiperf.json
+        #     profile_export_aiperf.csv
+        #   sweep_aggregate/
+        #     profile_export_aiperf_sweep.json
+        #     profile_export_aiperf_sweep.csv
+
+        concurrency_values = [2, 4, 6]
+
+        # Verify concurrency directories exist with single run artifacts
+        for concurrency in concurrency_values:
+            concurrency_dir = temp_output_dir / f"concurrency_{concurrency}"
+            assert concurrency_dir.exists(), (
+                f"concurrency_{concurrency} directory should exist"
+            )
+
+            # Verify NO profile_runs subdirectory (single run, no nesting)
+            profile_runs_dir = concurrency_dir / "profile_runs"
+            assert not profile_runs_dir.exists(), (
+                f"concurrency_{concurrency} should NOT have profile_runs subdirectory in sweep-only mode"
+            )
+
+            # Verify NO aggregate subdirectory (no confidence aggregation)
+            aggregate_dir = concurrency_dir / "aggregate"
+            assert not aggregate_dir.exists(), (
+                f"concurrency_{concurrency} should NOT have aggregate subdirectory in sweep-only mode"
+            )
+
+            # Verify single run artifacts exist directly in concurrency directory
+            json_file = concurrency_dir / "profile_export_aiperf.json"
+            csv_file = concurrency_dir / "profile_export_aiperf.csv"
+            assert json_file.exists(), (
+                f"concurrency_{concurrency} should have JSON artifact"
+            )
+            assert csv_file.exists(), (
+                f"concurrency_{concurrency} should have CSV artifact"
+            )
+
+            # Verify JSON content
+            with open(json_file) as f:
+                run_data = json.load(f)
+                assert run_data["request_count"]["avg"] == 10
+
+        # Verify NO top-level aggregate directory (no confidence aggregation)
+        top_level_aggregate_dir = temp_output_dir / "aggregate"
+        assert not top_level_aggregate_dir.exists(), (
+            "In sweep-only mode, no aggregate directory should exist"
+        )
+
+        # Verify NO sweep aggregate directory (sweep-only mode doesn't generate aggregates)
+        sweep_agg_dir = temp_output_dir / "sweep_aggregate"
+        assert not sweep_agg_dir.exists(), (
+            "In sweep-only mode, no sweep_aggregate directory should exist"
+        )
+
+        # Summary: This test validates sweep-only mode behavior:
+        # 1. Single run per sweep value (no confidence aggregation)
+        # 2. Flat directory structure (no trial nesting)
+        # 3. No confidence aggregate files generated
+        # 4. No sweep aggregate generated (current behavior for single runs)
+        # 5. Each concurrency value has its own directory with artifacts

@@ -651,10 +651,11 @@ class LoadGeneratorConfig(BaseConfig):
 
     @model_validator(mode="after")
     def validate_concurrency_list(self) -> "LoadGeneratorConfig":
-        """Validate that concurrency values are all >= 1.
+        """Validate that concurrency values are all >= 1 and lists have at least 2 elements.
 
         Raises:
-            ValueError: If concurrency is < 1 (single value) or any list value is < 1.
+            ValueError: If concurrency is < 1 (single value), any list value is < 1,
+                       or list has fewer than 2 elements.
         """
         if isinstance(self.concurrency, int):
             if self.concurrency < 1:
@@ -664,6 +665,16 @@ class LoadGeneratorConfig(BaseConfig):
                     f"Use --concurrency 1 or higher."
                 )
         elif isinstance(self.concurrency, list):
+            # Check minimum list length for parameter sweep
+            if len(self.concurrency) < 2:
+                raise ValueError(
+                    f"Invalid concurrency list: {self.concurrency}. "
+                    f"Parameter sweep requires at least 2 values to compare. "
+                    f"For a single concurrency value, use --concurrency {self.concurrency[0] if self.concurrency else 1} (without comma). "
+                    f"For parameter sweep, provide multiple values: --concurrency 10,20,30"
+                )
+
+            # Check all values are >= 1
             invalid_values = [v for v in self.concurrency if v < 1]
             if invalid_values:
                 # Build helpful message showing positions

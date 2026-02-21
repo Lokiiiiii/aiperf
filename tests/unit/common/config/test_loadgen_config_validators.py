@@ -144,10 +144,18 @@ class TestConcurrencyListValidation:
         config = LoadGeneratorConfig(concurrency=[10, 20, 10, 30])
         assert config.concurrency == [10, 20, 10, 30]
 
-    def test_concurrency_list_single_value_succeeds(self):
-        """Test that concurrency list with single value succeeds."""
-        config = LoadGeneratorConfig(concurrency=[10])
-        assert config.concurrency == [10]
+    def test_concurrency_list_single_value_raises_error(self):
+        """Test that concurrency list with single value raises ValueError.
+
+        Parameter sweep requires at least 2 values to compare. Single values
+        should be specified without a list (e.g., concurrency=10 not [10]).
+        """
+        with pytest.raises(ValidationError) as exc_info:
+            LoadGeneratorConfig(concurrency=[10])
+
+        error_msg = str(exc_info.value)
+        assert "Parameter sweep requires at least 2 values" in error_msg
+        assert "For a single concurrency value, use --concurrency 10" in error_msg
 
     def test_concurrency_list_with_zero_raises_error(self):
         """Test that concurrency list with zero value raises ValueError."""

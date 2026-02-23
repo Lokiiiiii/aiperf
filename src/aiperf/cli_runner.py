@@ -544,7 +544,10 @@ def _compute_sweep_aggregates(
         AggregateSweepJsonExporter,
     )
     from aiperf.orchestrator.aggregation.base import AggregateResult
-    from aiperf.orchestrator.aggregation.sweep import SweepAggregation
+    from aiperf.orchestrator.aggregation.sweep import (
+        ParameterCombination,
+        SweepAggregation,
+    )
 
     logger = AIPerfLogger(__name__)
 
@@ -620,10 +623,16 @@ def _compute_sweep_aggregates(
         logger.warning("No valid sweep values with aggregate statistics.")
         return
 
-    # Compute sweep aggregation with parameter name using filtered values
-    sweep_dict = SweepAggregation.compute(
-        per_value_stats, sweep_values_filtered, sweep_param_name
-    )
+    # Convert to new coordinate-based format
+    per_combination_stats = {
+        ParameterCombination({sweep_param_name: value}): stats
+        for value, stats in per_value_stats.items()
+    }
+
+    sweep_parameters = [{"name": sweep_param_name, "values": sweep_values_filtered}]
+
+    # Compute sweep aggregation
+    sweep_dict = SweepAggregation.compute(per_combination_stats, sweep_parameters)
 
     # Add sweep mode and confidence level to metadata
     sweep_dict["metadata"]["sweep_mode"] = sweep_mode
@@ -653,13 +662,12 @@ def _compute_sweep_aggregates(
         num_successful_runs=successful_runs,
         failed_runs=failed_run_details,
         metadata=sweep_dict["metadata"],
-        metrics=sweep_dict["per_value_metrics"],
+        metrics=sweep_dict["per_combination_metrics"],
     )
 
     # Store additional sweep-specific data in metadata
     sweep_result.metadata["best_configurations"] = sweep_dict["best_configurations"]
     sweep_result.metadata["pareto_optimal"] = sweep_dict["pareto_optimal"]
-    sweep_result.metadata["trends"] = sweep_dict["trends"]
 
     # Determine output directory based on sweep mode
     if sweep_mode == "repeated":
@@ -704,14 +712,20 @@ def _compute_sweep_aggregates(
         logger.info("Best Configurations:")
         if "best_throughput" in best_configs:
             best_throughput = best_configs["best_throughput"]
+            params_str = ", ".join(
+                f"{k}={v}" for k, v in best_throughput["parameters"].items()
+            )
             logger.info(
-                f"  Best throughput: concurrency={best_throughput['value']} "
+                f"  Best throughput: {params_str} "
                 f"({best_throughput['metric']:.2f} {best_throughput['unit']})"
             )
         if "best_latency_p99" in best_configs:
             best_latency = best_configs["best_latency_p99"]
+            params_str = ", ".join(
+                f"{k}={v}" for k, v in best_latency["parameters"].items()
+            )
             logger.info(
-                f"  Best latency (p99): concurrency={best_latency['value']} "
+                f"  Best latency (p99): {params_str} "
                 f"({best_latency['metric']:.2f} {best_latency['unit']})"
             )
 

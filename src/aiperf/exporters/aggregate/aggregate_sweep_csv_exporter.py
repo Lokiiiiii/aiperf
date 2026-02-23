@@ -12,11 +12,10 @@ class AggregateSweepCsvExporter(AggregateBaseExporter):
     """Exports sweep aggregate results to CSV format.
 
     Creates a CSV with multiple sections:
-    - Per-value metrics table (one row per sweep value)
+    - Per-combination metrics table (one row per parameter combination)
     - Blank line separator
     - Best configurations section
     - Pareto optimal points section
-    - Trends section
     - Metadata section
 
     Uses similar formatting approach as AggregateConfidenceCsvExporter for consistency.
@@ -34,11 +33,10 @@ class AggregateSweepCsvExporter(AggregateBaseExporter):
         """Generate CSV content from sweep aggregate result.
 
         Format: Multiple sections separated by blank lines:
-        1. Per-value metrics table (WIDE format - one row per sweep value, metrics as columns)
+        1. Per-combination metrics table (one row per parameter combination)
         2. Best configurations section
         3. Pareto optimal points section
-        4. Trends section
-        5. Metadata section
+        4. Metadata section
 
         Returns:
             str: CSV content string
@@ -46,52 +44,24 @@ class AggregateSweepCsvExporter(AggregateBaseExporter):
         buf = io.StringIO()
         writer = csv.writer(buf)
 
-        # Get parameter name from metadata (default to "concurrency")
-        param_name = self._result.metadata.get("parameter_name", "concurrency")
+        # Get sweep parameters from metadata
+        sweep_parameters = self._result.metadata.get("sweep_parameters", [])
+        param_names = [p["name"] for p in sweep_parameters]
 
-        # Section 1: Per-value metrics table (WIDE format)
-        per_value_metrics = self._result.metrics
+        # Section 1: Per-combination metrics table
+        per_combination_metrics = self._result.metrics
 
-        if per_value_metrics:
-            # Build header: parameter_value, metric1_mean, metric1_std, ..., metric2_mean, metric2_std, ...
-            header = ["parameter_value"]
+        # Section 1: Per-combination metrics table
+        per_combination_metrics = self._result.metrics
 
-            # Get parameter values in canonical order from metadata if available
-            parameter_values = self._result.metadata.get("parameter_values", [])
-            if parameter_values:
-                # Use canonical order from metadata, matching both str and numeric forms
-                value_keys = []
-                for v in parameter_values:
-                    # Try both string and numeric forms to match per_value_metrics keys
-                    if str(v) in per_value_metrics or v in per_value_metrics:
-                        value_keys.append(str(v))
+        if per_combination_metrics:
+            # Build header: param1, param2, ..., metric1_mean, metric1_std, ...
+            header = param_names.copy()
 
-                # If no matches found, fall back to numeric sort
-                if not value_keys:
-
-                    def numeric_sort_key(k):
-                        try:
-                            return (0, float(k))  # Numeric values sort first
-                        except (ValueError, TypeError):
-                            return (1, k)  # Non-numeric values sort last as strings
-
-                    value_keys = sorted(per_value_metrics.keys(), key=numeric_sort_key)
-            else:
-                # Fallback: sort numerically (try float, fallback to string)
-                def numeric_sort_key(k):
-                    try:
-                        return (0, float(k))  # Numeric values sort first
-                    except (ValueError, TypeError):
-                        return (1, k)  # Non-numeric values sort last as strings
-
-                value_keys = sorted(per_value_metrics.keys(), key=numeric_sort_key)
-
-            # Get all metric names from union of all values (not just first)
-            if value_keys:
-                all_metric_names = set()
-                for value_str in value_keys:
-                    all_metric_names.update(per_value_metrics[value_str].keys())
-                metric_names = sorted(all_metric_names)
+            # Get all metric names from the first combination
+            if per_combination_metrics:
+                first_combo = per_combination_metrics[0]
+                metric_names = sorted(first_combo.get("metrics", {}).keys())
             else:
                 metric_names = []
 
@@ -109,11 +79,15 @@ class AggregateSweepCsvExporter(AggregateBaseExporter):
 
             writer.writerow(header)
 
-            # Write data rows (one row per sweep value in canonical order)
-            for value_str in value_keys:
-                row = [value_str]
-                metrics = per_value_metrics[value_str]
+            # Write data rows (one row per parameter combination)
+            for combo_entry in per_combination_metrics:
+                parameters = combo_entry.get("parameters", {})
+                metrics = combo_entry.get("metrics", {})
 
+                # Start row with parameter values
+                row = [parameters.get(param_name, "") for param_name in param_names]
+
+                # Add metric statistics
                 for metric_name in metric_names:
                     metric_data = metrics.get(metric_name, {})
                     if isinstance(metric_data, dict):
@@ -137,73 +111,49 @@ class AggregateSweepCsvExporter(AggregateBaseExporter):
         writer.writerow(["Best Configurations"])
         best_configs = self._result.metadata.get("best_configurations", {})
         if best_configs:
-            writer.writerow(["Configuration", "Value", "Metric", "Unit"])
+            # Header with all parameter names
+            header = ["Configuration"] + param_names + ["Metric", "Unit"]
+            writer.writerow(header)
+
             for config_name, config_data in best_configs.items():
                 # Format config name: best_throughput -> Best Throughput
                 formatted_name = config_name.replace("_", " ").title()
-                writer.writerow(
+                parameters = config_data.get("parameters", {})
+
+                # Build row with parameter values
+                row = [formatted_name]
+                row.extend(
+                    [parameters.get(param_name, "") for param_name in param_names]
+                )
+                row.extend(
                     [
-                        formatted_name,
-                        config_data.get("value", ""),
                         self._format_number(config_data.get("metric")),
                         config_data.get("unit", ""),
                     ]
                 )
+                writer.writerow(row)
 
         # Section 3: Pareto Optimal Points
         writer.writerow([])  # Blank line
         writer.writerow(["Pareto Optimal Points"])
         pareto_optimal = self._result.metadata.get("pareto_optimal", [])
         if pareto_optimal:
-            writer.writerow([param_name])
-            for value in pareto_optimal:
-                writer.writerow([value])
+            # Header with all parameter names
+            writer.writerow(param_names)
+            for combo_params in pareto_optimal:
+                row = [combo_params.get(param_name, "") for param_name in param_names]
+                writer.writerow(row)
         else:
             writer.writerow(["None"])
 
-        # Section 4: Trends
-        writer.writerow([])  # Blank line
-        writer.writerow(["Trends"])
-        trends = self._result.metadata.get("trends", {})
-        if trends:
-            for metric_name, trend_data in trends.items():
-                writer.writerow([f"Metric: {metric_name}"])
-
-                # Inflection Points
-                inflection_points = trend_data.get("inflection_points", [])
-                writer.writerow(["Inflection Points"])
-                if inflection_points:
-                    writer.writerow([param_name])
-                    for point in inflection_points:
-                        writer.writerow([point])
-                else:
-                    writer.writerow(["None"])
-
-                # Rate of Change
-                rate_of_change = trend_data.get("rate_of_change", [])
-                writer.writerow(["Rate of Change"])
-                if rate_of_change:
-                    writer.writerow(["Interval", "Rate"])
-                    for i, rate in enumerate(rate_of_change):
-                        writer.writerow(
-                            [f"Interval {i + 1}", self._format_number(rate)]
-                        )
-                else:
-                    writer.writerow(["None"])
-
-                writer.writerow([])  # Blank line between metrics
-
-        # Section 5: Metadata
+        # Section 4: Metadata
         writer.writerow([])  # Blank line
         writer.writerow(["Metadata"])
         writer.writerow(["Field", "Value"])
         writer.writerow(["Aggregation Type", self._result.aggregation_type])
-        writer.writerow(["Parameter Name", param_name])
+        writer.writerow(["Sweep Parameters", ", ".join(param_names)])
         writer.writerow(
-            ["Parameter Values", str(self._result.metadata.get("parameter_values", []))]
-        )
-        writer.writerow(
-            ["Number of Values", self._result.metadata.get("num_values", 0)]
+            ["Number of Combinations", self._result.metadata.get("num_combinations", 0)]
         )
         writer.writerow(["Number of Profile Runs", self._result.num_runs])
         writer.writerow(["Number of Successful Runs", self._result.num_successful_runs])

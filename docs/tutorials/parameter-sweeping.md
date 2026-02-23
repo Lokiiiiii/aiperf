@@ -5,8 +5,8 @@
 Parameter sweeping allows you to benchmark across multiple parameter values (e.g., concurrency levels) in a single command. This enables systematic performance characterization, identification of optimal configurations, and understanding of how your system scales.
 
 Instead of running separate benchmarks for each concurrency level, parameter sweeping automates the process and provides comprehensive analysis including:
-- Performance trends across parameter values
 - Pareto optimal configurations (best trade-offs)
+- Best configurations for key metrics (throughput, latency)
 - Confidence intervals when combined with multi-run mode
 - Organized hierarchical output structure
 
@@ -17,7 +17,7 @@ When you run a parameter sweep, AIPerf:
 2. **Organizes results** hierarchically for easy navigation
 3. **Computes aggregate statistics** across all values
 4. **Identifies optimal configurations** based on your objectives
-5. **Analyzes trends** to show how performance changes
+5. **Analyzes performance** across parameter combinations
 
 This helps answer questions like:
 - **"What's the optimal concurrency for my workload?"**
@@ -865,29 +865,31 @@ import pandas as pd
 with open('artifacts/.../sweep_aggregate/profile_export_aiperf_sweep.json') as f:
     sweep = json.load(f)
 
-# Extract throughput and latency for each value
+# Extract throughput and latency for each combination
 data = []
-for value, metrics in sweep['per_value_metrics'].items():
+for combo in sweep['per_combination_metrics']:
+    params = combo['parameters']
+    metrics = combo['metrics']
     data.append({
-        'concurrency': int(value),
+        'concurrency': params['concurrency'],
         'throughput': metrics['request_throughput_avg']['mean'],
         'latency_p99': metrics['ttft_p99_ms']['mean'],
-        'throughput_cv': metrics['request_throughput_avg']['cv'],
-        'latency_cv': metrics['ttft_p99_ms']['cv'],
+        'throughput_cv': metrics['request_throughput_avg'].get('cv', 0),
+        'latency_cv': metrics['ttft_p99_ms'].get('cv', 0),
     })
 
-df = pd.DataFrame(data)
+df = pd.DataFrame(data).sort_values('concurrency')
 print(df)
 
 # Identify Pareto optimal points
-pareto = sweep['pareto_optimal']
-print(f"Pareto optimal concurrency values: {pareto}")
+pareto_optimal = sweep['pareto_optimal']
+pareto_concurrency_values = [p['concurrency'] for p in pareto_optimal]
+print(f"Pareto optimal concurrency values: {pareto_concurrency_values}")
 
-# Check inflection points
-throughput_inflection = sweep['trends']['request_throughput_avg']['inflection_points']
-latency_inflection = sweep['trends']['ttft_p99_ms']['inflection_points']
-print(f"Throughput inflection at: {throughput_inflection}")
-print(f"Latency inflection at: {latency_inflection}")
+# Get best configurations
+best_configs = sweep['best_configurations']
+print(f"Best throughput: {best_configs['best_throughput']['parameters']}")
+print(f"Best latency: {best_configs['best_latency_p99']['parameters']}")
 ```
 
 ### Creating Custom Visualizations
@@ -899,12 +901,13 @@ import matplotlib.pyplot as plt
 fig, ax = plt.subplots(figsize=(10, 6))
 
 for _, row in df.iterrows():
-    is_pareto = row['concurrency'] in pareto
+    is_pareto = row['concurrency'] in pareto_concurrency_values
     marker = 'o' if is_pareto else 'x'
     color = 'blue' if is_pareto else 'gray'
+    label = f"C={row['concurrency']}" + (" (Pareto)" if is_pareto else "")
     ax.scatter(row['latency_p99'], row['throughput'],
                marker=marker, s=100, color=color,
-               label=f"C={row['concurrency']}")
+               label=label)
 
 ax.set_xlabel('Latency P99 (ms)')
 ax.set_ylabel('Throughput (req/s)')
@@ -919,7 +922,7 @@ plt.savefig('pareto_frontier.png')
 Parameter sweeping helps you:
 - ✅ Systematically characterize performance across parameter values
 - ✅ Identify optimal configurations with Pareto analysis
-- ✅ Understand scaling behavior with trend analysis
+- ✅ Compare performance across different parameter combinations
 - ✅ Quantify variance with confidence intervals
 - ✅ Make data-driven capacity planning decisions
 
@@ -934,11 +937,12 @@ aiperf profile --concurrency 10,20,30,40 --num-profile-runs 5 [other options]
 
 **Key Concepts:**
 - **Pareto optimal**: Best trade-off configurations
-- **Inflection points**: Where performance characteristics change
+- **Best configurations**: Highest throughput and lowest latency points
 - **Sweep modes**: Repeated (dynamic) vs Independent (isolated)
 - **CV < 10%**: Good repeatability
 
 For more details, see:
+- [Sweep Aggregates API Reference](../api/sweep-aggregates.md) - Complete data format documentation
 - [Multi-Run Confidence](./multi-run-confidence.md) - Understanding confidence intervals
 - [CLI Options](../cli_options.md) - Full parameter reference
 - [Metrics Reference](../metrics_reference.md) - Detailed metric descriptions

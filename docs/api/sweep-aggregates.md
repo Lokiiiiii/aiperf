@@ -8,12 +8,12 @@ Complete API documentation for parameter sweep aggregate outputs, including JSON
 
 ## Overview
 
-When running parameter sweeps with AIPerf (e.g., `--concurrency 10,20,30`), the system generates sweep aggregate files that summarize performance across all parameter values. These aggregates enable:
+When running parameter sweeps with AIPerf (e.g., `--concurrency 10,20,30`), the system generates sweep aggregate files that summarize performance across all parameter combinations. These aggregates enable:
 
-- Comparison of performance across parameter values
+- Comparison of performance across parameter combinations
 - Identification of optimal configurations
 - Pareto frontier analysis for multi-objective optimization
-- Trend analysis showing how metrics change with parameter values
+- Statistical analysis with confidence intervals (when using `--num-profile-runs > 1`)
 
 ## Output Files
 
@@ -40,10 +40,9 @@ artifacts/
   "num_successful_runs": 15,
   "failed_runs": [],
   "metadata": { ... },
-  "per_value_metrics": { ... },
+  "per_combination_metrics": [ ... ],
   "best_configurations": { ... },
-  "pareto_optimal": [ ... ],
-  "trends": { ... }
+  "pareto_optimal": [ ... ]
 }
 ```
 
@@ -56,25 +55,26 @@ artifacts/
 | `num_successful_runs` | int | Number of successful profile runs |
 | `failed_runs` | array | List of failed runs with error details (empty if all succeeded) |
 | `metadata` | object | Sweep configuration and execution metadata |
-| `per_value_metrics` | object | Aggregated metrics for each parameter value |
-| `best_configurations` | object | Best parameter values for key metrics |
-| `pareto_optimal` | array | List of Pareto optimal parameter values |
-| `trends` | object | Trend analysis for metrics across parameter values |
+| `per_combination_metrics` | array | List of metrics for each parameter combination |
+| `best_configurations` | object | Best parameter combinations for key metrics |
+| `pareto_optimal` | array | List of Pareto optimal parameter combinations |
 
 ### Metadata Section
 
-Contains information about the sweep configuration and execution.
+Contains information about the sweep configuration.
 
 ```json
 {
   "metadata": {
-    "parameter_name": "concurrency",
-    "parameter_values": [10, 20, 30, 40],
-    "num_values": 4,
-    "num_trials_per_value": 5,
-    "sweep_mode": "repeated",
-    "confidence_level": 0.95,
-    "benchmark_config": { ... }
+    "sweep_parameters": [
+      {
+        "name": "concurrency",
+        "values": [10, 20, 30, 40]
+      }
+    ],
+    "num_combinations": 4,
+    "best_configurations": { ... },
+    "pareto_optimal": [ ... ]
   }
 }
 ```
@@ -83,55 +83,73 @@ Contains information about the sweep configuration and execution.
 
 | Field | Type | Description |
 |-------|------|-------------|
-| `parameter_name` | string | Name of the parameter being swept (e.g., `"concurrency"`) |
-| `parameter_values` | array[int] | List of parameter values tested |
-| `num_values` | int | Number of parameter values in the sweep |
-| `num_trials_per_value` | int | Number of trials executed per parameter value (from `--num-profile-runs`) |
-| `sweep_mode` | string | Execution mode: `"repeated"` or `"independent"` |
-| `confidence_level` | float | Confidence level for statistical intervals (e.g., 0.95 for 95%) |
-| `benchmark_config` | object | Full benchmark configuration used |
+| `sweep_parameters` | array | List of parameter definitions (name and values) |
+| `num_combinations` | int | Total number of parameter combinations tested |
+| `best_configurations` | object | Best combinations for key metrics (duplicated from top level) |
+| `pareto_optimal` | array | Pareto optimal combinations (duplicated from top level) |
 
-### Per-Value Metrics Section
+**Sweep Parameters Structure:**
 
-Contains aggregated metrics for each parameter value. When multiple trials are run (`--num-profile-runs > 1`), includes confidence statistics.
+Each parameter definition contains:
+- `name`: Parameter name (e.g., `"concurrency"`, `"request_rate"`)
+- `values`: List of values tested for this parameter
+
+### Per-Combination Metrics Section
+
+Contains aggregated metrics for each parameter combination. This is a list where each entry represents one combination.
 
 ```json
 {
-  "per_value_metrics": {
-    "10": {
-      "request_throughput_avg": {
-        "mean": 100.5,
-        "std": 5.2,
-        "min": 95.0,
-        "max": 108.0,
-        "cv": 0.052,
-        "se": 2.3,
-        "ci_low": 94.3,
-        "ci_high": 106.7,
-        "t_critical": 2.776,
-        "unit": "requests/sec"
+  "per_combination_metrics": [
+    {
+      "parameters": {
+        "concurrency": 10
       },
-      "ttft_p99_ms": {
-        "mean": 120.5,
-        "std": 8.1,
-        "min": 110.2,
-        "max": 132.8,
-        "cv": 0.067,
-        "se": 3.6,
-        "ci_low": 111.5,
-        "ci_high": 129.5,
-        "t_critical": 2.776,
-        "unit": "ms"
+      "metrics": {
+        "request_throughput_avg": {
+          "mean": 100.5,
+          "std": 5.2,
+          "min": 95.0,
+          "max": 108.0,
+          "cv": 0.052,
+          "se": 2.3,
+          "ci_low": 94.3,
+          "ci_high": 106.7,
+          "t_critical": 2.776,
+          "unit": "requests/sec"
+        },
+        "ttft_p99_ms": {
+          "mean": 120.5,
+          "std": 8.1,
+          "min": 110.2,
+          "max": 132.8,
+          "cv": 0.067,
+          "se": 3.6,
+          "ci_low": 111.5,
+          "ci_high": 129.5,
+          "t_critical": 2.776,
+          "unit": "ms"
+        }
       }
     },
-    "20": { ... },
-    "30": { ... },
-    "40": { ... }
-  }
+    {
+      "parameters": {
+        "concurrency": 20
+      },
+      "metrics": { ... }
+    }
+  ]
 }
 ```
 
-**Metric Fields:**
+**Combination Entry Fields:**
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `parameters` | object | Dictionary of parameter names to values for this combination |
+| `metrics` | object | Dictionary of metric names to statistics |
+
+**Metric Statistics Fields:**
 
 | Field | Type | Description |
 |-------|------|-------------|
@@ -150,18 +168,22 @@ Contains aggregated metrics for each parameter value. When multiple trials are r
 
 ### Best Configurations Section
 
-Identifies the parameter values that achieved the best performance for key metrics.
+Identifies the parameter combinations that achieved the best performance for key metrics.
 
 ```json
 {
   "best_configurations": {
     "best_throughput": {
-      "value": 40,
+      "parameters": {
+        "concurrency": 40
+      },
       "metric": 350.2,
       "unit": "requests/sec"
     },
     "best_latency_p99": {
-      "value": 10,
+      "parameters": {
+        "concurrency": 10
+      },
       "metric": 120.5,
       "unit": "ms"
     }
@@ -173,22 +195,26 @@ Identifies the parameter values that achieved the best performance for key metri
 
 | Field | Type | Description |
 |-------|------|-------------|
-| `value` | int | Parameter value that achieved best performance |
+| `parameters` | object | Parameter combination that achieved best performance |
 | `metric` | float | The metric value achieved |
 | `unit` | string | Unit of measurement |
 
 **Available Configurations:**
 
 - `best_throughput`: Highest `request_throughput_avg`
-- `best_latency_p99`: Lowest `ttft_p99_ms`
+- `best_latency_p99`: Lowest `ttft_p99_ms` (or `request_latency_p99` as fallback)
 
 ### Pareto Optimal Section
 
-Lists parameter values that are Pareto optimal - configurations where no other configuration is strictly better on all objectives simultaneously.
+Lists parameter combinations that are Pareto optimal - configurations where no other configuration is strictly better on all objectives simultaneously.
 
 ```json
 {
-  "pareto_optimal": [10, 30, 40]
+  "pareto_optimal": [
+    {"concurrency": 10},
+    {"concurrency": 30},
+    {"concurrency": 40}
+  ]
 }
 ```
 
@@ -201,66 +227,24 @@ A configuration is Pareto optimal if:
 - It represents a valid trade-off point on the efficiency frontier
 
 **Example Interpretation:**
-```
+```text
 Concurrency 10: Low latency, moderate throughput (latency-optimized)
 Concurrency 30: Balanced latency and throughput
 Concurrency 40: High throughput, higher latency (throughput-optimized)
 ```
 
-### Trends Section
+**Multi-Parameter Sweeps:**
 
-Analyzes how metrics change across parameter values, identifying patterns and inflection points.
+For sweeps with multiple parameters (e.g., `--concurrency 10,20 --request-rate 5,10`), each Pareto optimal entry contains all parameter values:
 
 ```json
 {
-  "trends": {
-    "request_throughput_avg": {
-      "inflection_points": [30],
-      "rate_of_change": [75.5, 85.2, 15.3]
-    },
-    "ttft_p99_ms": {
-      "inflection_points": [],
-      "rate_of_change": [10.2, 15.5, 20.1]
-    }
-  }
+  "pareto_optimal": [
+    {"concurrency": 10, "request_rate": 5},
+    {"concurrency": 20, "request_rate": 10}
+  ]
 }
 ```
-
-**Trend Fields:**
-
-| Field | Type | Description |
-|-------|------|-------------|
-| `inflection_points` | array[int] | Parameter values where trend changes significantly |
-| `rate_of_change` | array[float] | Change in metric between consecutive parameter values |
-
-**Interpreting Rate of Change:**
-
-The `rate_of_change` array has N-1 values for N parameter values:
-- `rate_of_change[0]`: Change from value 1 to value 2
-- `rate_of_change[1]`: Change from value 2 to value 3
-- etc.
-
-**Pattern Detection:**
-- All positive → Increasing trend
-- All negative → Decreasing trend
-- Near zero → Plateau
-- Mixed signs → Non-monotonic behavior
-
-**Inflection Points:**
-
-Detected when:
-- Sign flip in rate of change (increasing → decreasing or vice versa)
-- Magnitude change > 50% between consecutive rates
-
-**Example:**
-```json
-{
-  "request_throughput_avg": {
-    "rate_of_change": [80.0, 90.0, 15.0]
-  }
-}
-```
-Interpretation: Throughput increases steadily from value 1→2 (+80) and 2→3 (+90), then plateaus from 3→4 (+15), indicating diminishing returns.
 
 ---
 
@@ -272,18 +256,17 @@ The CSV export provides a tabular view optimized for spreadsheet analysis and pl
 
 The CSV file contains multiple sections separated by blank lines:
 
-1. **Per-Value Metrics Table** (main data)
+1. **Per-Combination Metrics Table** (main data)
 2. **Best Configurations**
 3. **Pareto Optimal Points**
-4. **Trends**
-5. **Metadata**
+4. **Metadata**
 
-### Per-Value Metrics Table
+### Per-Combination Metrics Table
 
-The first section is a wide-format table with one row per parameter value:
+The first section is a wide-format table with one row per parameter combination:
 
 ```csv
-parameter_value,request_throughput_avg_mean,request_throughput_avg_std,request_throughput_avg_min,request_throughput_avg_max,request_throughput_avg_cv,ttft_p99_ms_mean,ttft_p99_ms_std,ttft_p99_ms_min,ttft_p99_ms_max,ttft_p99_ms_cv
+concurrency,request_throughput_avg_mean,request_throughput_avg_std,request_throughput_avg_min,request_throughput_avg_max,request_throughput_avg_cv,ttft_p99_ms_mean,ttft_p99_ms_std,ttft_p99_ms_min,ttft_p99_ms_max,ttft_p99_ms_cv
 10,100.50,5.20,95.00,108.00,0.0520,120.50,8.10,110.20,132.80,0.0672
 20,180.30,8.50,170.00,195.00,0.0471,135.20,9.30,125.00,148.00,0.0688
 30,270.80,12.10,255.00,290.00,0.0447,155.80,11.20,142.00,172.00,0.0719
@@ -291,55 +274,67 @@ parameter_value,request_throughput_avg_mean,request_throughput_avg_std,request_t
 ```
 
 **Columns:**
-- `parameter_value`: The parameter value (e.g., concurrency level)
-- `{metric}_mean`: Mean value across trials
-- `{metric}_std`: Standard deviation
-- `{metric}_min`: Minimum value
-- `{metric}_max`: Maximum value
-- `{metric}_cv`: Coefficient of variation
+- Parameter columns (e.g., `concurrency`, `request_rate`)
+- For each metric: `{metric}_mean`, `{metric}_std`, `{metric}_min`, `{metric}_max`, `{metric}_cv`
+
+**Multi-Parameter Example:**
+
+```csv
+concurrency,request_rate,request_throughput_avg_mean,request_throughput_avg_std,...
+10,5,50.25,2.10,...
+10,10,95.30,4.50,...
+20,5,98.40,3.20,...
+20,10,185.60,7.80,...
+```
 
 ### Best Configurations Section
 
 ```csv
 Best Configurations
-Metric,Best Value,Metric Value,Unit
+Configuration,concurrency,Metric,Unit
 Best Throughput,40,285.50,requests/sec
 Best Latency P99,10,120.50,ms
+```
+
+For multi-parameter sweeps:
+
+```csv
+Best Configurations
+Configuration,concurrency,request_rate,Metric,Unit
+Best Throughput,40,10,350.20,requests/sec
+Best Latency P99,10,5,95.30,ms
 ```
 
 ### Pareto Optimal Section
 
 ```csv
 Pareto Optimal Points
-Parameter Values
+concurrency
 10
 30
 40
 ```
 
-### Trends Section
+For multi-parameter sweeps:
 
 ```csv
-Trends
-Metric: request_throughput_avg
-Inflection Points,30
-Rate of Change,79.80, 90.50, 14.70
-
-Metric: ttft_p99_ms
-Inflection Points,None
-Rate of Change,14.70, 20.60, 24.50
+Pareto Optimal Points
+concurrency,request_rate
+10,5
+20,10
+40,10
 ```
 
 ### Metadata Section
 
 ```csv
 Metadata
+Field,Value
 Aggregation Type,sweep
-Total Runs,12
-Successful Runs,12
-Parameter Name,concurrency
-Parameter Values,"10, 20, 30, 40"
-Number of Values,4
+Sweep Parameters,concurrency
+Number of Combinations,4
+Number of Profile Runs,12
+Number of Successful Runs,12
 ```
 
 ---
@@ -357,13 +352,13 @@ artifacts/
       trial_0001/
         concurrency_10/
           profile_export_aiperf.json
-          profile_export_aiperf.csv
+          profile_export.jsonl
         concurrency_20/
           profile_export_aiperf.json
-          profile_export_aiperf.csv
+          profile_export.jsonl
         concurrency_30/
           profile_export_aiperf.json
-          profile_export_aiperf.csv
+          profile_export.jsonl
       trial_0002/
         concurrency_10/
         concurrency_20/
@@ -382,9 +377,9 @@ artifacts/
       concurrency_30/
         profile_export_aiperf_aggregate.json
         profile_export_aiperf_aggregate.csv
-      sweep_aggregate/
-        profile_export_aiperf_sweep.json
-        profile_export_aiperf_sweep.csv
+    sweep_aggregate/
+      profile_export_aiperf_sweep.json
+      profile_export_aiperf_sweep.csv
 ```
 
 **Execution Pattern:**
@@ -398,14 +393,14 @@ Trial 3: [10 → 20 → 30]
 
 All trials at each parameter value before moving to the next:
 
-```
+```text
 artifacts/
   {benchmark_name}/
     concurrency_10/
       profile_runs/
         trial_0001/
           profile_export_aiperf.json
-          profile_export_aiperf.csv
+          profile_export.jsonl
         trial_0002/
         trial_0003/
       aggregate/
@@ -433,7 +428,7 @@ artifacts/
 ```
 
 **Execution Pattern:**
-```
+```text
 Concurrency 10: [trial1, trial2, trial3]
 Concurrency 20: [trial1, trial2, trial3]
 Concurrency 30: [trial1, trial2, trial3]
@@ -448,13 +443,13 @@ artifacts/
   {benchmark_name}/
     concurrency_10/
       profile_export_aiperf.json
-      profile_export_aiperf.csv
+      profile_export.jsonl
     concurrency_20/
       profile_export_aiperf.json
-      profile_export_aiperf.csv
+      profile_export.jsonl
     concurrency_30/
       profile_export_aiperf.json
-      profile_export_aiperf.csv
+      profile_export.jsonl
     sweep_aggregate/
       profile_export_aiperf_sweep.json
       profile_export_aiperf_sweep.csv
@@ -477,10 +472,10 @@ with open(sweep_file) as f:
 
 # Inspect metadata
 metadata = sweep_data["metadata"]
-print(f"Parameter: {metadata['parameter_name']}")
-print(f"Values tested: {metadata['parameter_values']}")
-print(f"Trials per value: {metadata['num_trials_per_value']}")
-print(f"Sweep mode: {metadata['sweep_mode']}")
+sweep_params = metadata["sweep_parameters"]
+print(f"Sweep parameters: {[p['name'] for p in sweep_params]}")
+print(f"Total combinations: {metadata['num_combinations']}")
+print(f"Total runs: {sweep_data['num_profile_runs']}")
 ```
 
 ### Example 2: Find Optimal Configuration
@@ -491,11 +486,11 @@ best_configs = sweep_data["best_configurations"]
 
 best_throughput = best_configs["best_throughput"]
 print(f"Best throughput: {best_throughput['metric']:.2f} {best_throughput['unit']}")
-print(f"  at {metadata['parameter_name']}={best_throughput['value']}")
+print(f"  Parameters: {best_throughput['parameters']}")
 
 best_latency = best_configs["best_latency_p99"]
 print(f"Best latency: {best_latency['metric']:.2f} {best_latency['unit']}")
-print(f"  at {metadata['parameter_name']}={best_latency['value']}")
+print(f"  Parameters: {best_latency['parameters']}")
 ```
 
 ### Example 3: Analyze Pareto Frontier
@@ -503,85 +498,70 @@ print(f"  at {metadata['parameter_name']}={best_latency['value']}")
 ```python
 # Get Pareto optimal points
 pareto_optimal = sweep_data["pareto_optimal"]
-print(f"Pareto optimal configurations: {pareto_optimal}")
+print(f"Found {len(pareto_optimal)} Pareto optimal configurations")
 
 # Extract metrics for Pareto points
-per_value_metrics = sweep_data["per_value_metrics"]
+per_combination_metrics = sweep_data["per_combination_metrics"]
 
 print("\nPareto Frontier:")
-for value in pareto_optimal:
-    metrics = per_value_metrics[str(value)]
-    throughput = metrics["request_throughput_avg"]["mean"]
-    latency = metrics["ttft_p99_ms"]["mean"]
-    print(f"  {metadata['parameter_name']}={value}: "
-          f"{throughput:.1f} req/s, {latency:.1f} ms p99")
+for combo in per_combination_metrics:
+    params = combo["parameters"]
+    # Check if this combination is Pareto optimal
+    if params in pareto_optimal:
+        metrics = combo["metrics"]
+        throughput = metrics["request_throughput_avg"]["mean"]
+        latency = metrics["ttft_p99_ms"]["mean"]
+        print(f"  {params}: {throughput:.1f} req/s, {latency:.1f} ms p99")
 ```
 
-### Example 4: Detect Performance Trends
-
-```python
-# Analyze trends
-trends = sweep_data["trends"]
-
-throughput_trend = trends.get("request_throughput_avg", {})
-rate_of_change = throughput_trend.get("rate_of_change", [])
-inflection_points = throughput_trend.get("inflection_points", [])
-
-# Determine pattern
-if all(r > 0 for r in rate_of_change):
-    pattern = "increasing"
-elif all(r < 0 for r in rate_of_change):
-    pattern = "decreasing"
-elif all(abs(r) < 5 for r in rate_of_change):
-    pattern = "plateau"
-else:
-    pattern = "mixed"
-
-print(f"Throughput trend: {pattern}")
-if inflection_points:
-    print(f"Inflection points at: {inflection_points}")
-```
-
-### Example 5: Compare Confidence Intervals
+### Example 4: Compare Confidence Intervals
 
 ```python
 import matplotlib.pyplot as plt
 
-# Extract data for plotting
-param_values = metadata["parameter_values"]
+# Extract data for single-parameter sweep
+combinations = sweep_data["per_combination_metrics"]
+
+# Assuming single parameter (concurrency)
+param_name = sweep_data["metadata"]["sweep_parameters"][0]["name"]
+param_values = []
 throughputs = []
 ci_lows = []
 ci_highs = []
 
-for value in param_values:
-    metrics = per_value_metrics[str(value)]
-    tp = metrics["request_throughput_avg"]
+for combo in combinations:
+    param_value = combo["parameters"][param_name]
+    tp = combo["metrics"]["request_throughput_avg"]
+
+    param_values.append(param_value)
     throughputs.append(tp["mean"])
-    ci_lows.append(tp["ci_low"])
-    ci_highs.append(tp["ci_high"])
+    ci_lows.append(tp.get("ci_low", tp["mean"]))
+    ci_highs.append(tp.get("ci_high", tp["mean"]))
 
 # Plot with confidence intervals
 plt.figure(figsize=(10, 6))
 plt.plot(param_values, throughputs, 'o-', label='Mean Throughput')
 plt.fill_between(param_values, ci_lows, ci_highs, alpha=0.3, label='95% CI')
-plt.xlabel(metadata["parameter_name"].title())
+plt.xlabel(param_name.title())
 plt.ylabel('Throughput (requests/sec)')
-plt.title('Throughput vs Concurrency')
+plt.title(f'Throughput vs {param_name.title()}')
 plt.legend()
 plt.grid(True)
 plt.savefig('throughput_sweep.png')
 ```
 
-### Example 6: Export to Pandas DataFrame
+### Example 5: Export to Pandas DataFrame
 
 ```python
 import pandas as pd
 
-# Convert per-value metrics to DataFrame
+# Convert per-combination metrics to DataFrame
 rows = []
-for value_str, metrics in per_value_metrics.items():
-    row = {"parameter_value": int(value_str)}
-    for metric_name, metric_data in metrics.items():
+for combo in sweep_data["per_combination_metrics"]:
+    row = combo["parameters"].copy()
+
+    # Add metrics
+    for metric_name, metric_data in combo["metrics"].items():
         if isinstance(metric_data, dict):
             row[f"{metric_name}_mean"] = metric_data.get("mean")
             row[f"{metric_name}_std"] = metric_data.get("std")
@@ -591,34 +571,71 @@ for value_str, metrics in per_value_metrics.items():
     rows.append(row)
 
 df = pd.DataFrame(rows)
-df = df.sort_values("parameter_value")
+
+# Sort by parameter values
+param_names = [p["name"] for p in sweep_data["metadata"]["sweep_parameters"]]
+df = df.sort_values(param_names)
 
 # Analyze
-print(df[["parameter_value", "request_throughput_avg_mean", "ttft_p99_ms_mean"]])
+print(df[[*param_names, "request_throughput_avg_mean", "ttft_p99_ms_mean"]])
 
 # Export
 df.to_csv("sweep_analysis.csv", index=False)
 ```
 
+### Example 6: Multi-Parameter Sweep Analysis
+
+```python
+# For sweeps with multiple parameters
+sweep_params = sweep_data["metadata"]["sweep_parameters"]
+param_names = [p["name"] for p in sweep_params]
+
+print(f"Multi-parameter sweep: {', '.join(param_names)}")
+
+# Find best combination for each parameter individually
+for param_name in param_names:
+    # Group by this parameter
+    param_groups = {}
+    for combo in sweep_data["per_combination_metrics"]:
+        param_value = combo["parameters"][param_name]
+        if param_value not in param_groups:
+            param_groups[param_value] = []
+        param_groups[param_value].append(combo)
+
+    # Find best throughput for each value of this parameter
+    print(f"\nBest throughput for each {param_name}:")
+    for value, combos in sorted(param_groups.items()):
+        best_combo = max(combos,
+                        key=lambda c: c["metrics"]["request_throughput_avg"]["mean"])
+        throughput = best_combo["metrics"]["request_throughput_avg"]["mean"]
+        print(f"  {param_name}={value}: {throughput:.1f} req/s")
+        print(f"    Full config: {best_combo['parameters']}")
+```
+
 ### Example 7: Identify Diminishing Returns
 
 ```python
-# Calculate efficiency (throughput per unit of parameter)
-param_values = metadata["parameter_values"]
-efficiencies = []
+# For single-parameter sweeps, calculate efficiency
+combinations = sweep_data["per_combination_metrics"]
+param_name = sweep_data["metadata"]["sweep_parameters"][0]["name"]
 
-for value in param_values:
-    metrics = per_value_metrics[str(value)]
-    throughput = metrics["request_throughput_avg"]["mean"]
-    efficiency = throughput / value
-    efficiencies.append(efficiency)
+# Sort by parameter value
+combinations_sorted = sorted(combinations,
+                            key=lambda c: c["parameters"][param_name])
+
+efficiencies = []
+for combo in combinations_sorted:
+    param_value = combo["parameters"][param_name]
+    throughput = combo["metrics"]["request_throughput_avg"]["mean"]
+    efficiency = throughput / param_value
+    efficiencies.append((param_value, efficiency))
 
 # Find point of diminishing returns (where efficiency drops significantly)
 threshold = 0.8  # 20% drop
 for i in range(1, len(efficiencies)):
-    if efficiencies[i] < threshold * efficiencies[i-1]:
-        print(f"Diminishing returns detected at {metadata['parameter_name']}={param_values[i]}")
-        print(f"  Efficiency dropped from {efficiencies[i-1]:.2f} to {efficiencies[i]:.2f}")
+    if efficiencies[i][1] < threshold * efficiencies[i-1][1]:
+        print(f"Diminishing returns detected at {param_name}={efficiencies[i][0]}")
+        print(f"  Efficiency dropped from {efficiencies[i-1][1]:.2f} to {efficiencies[i][1]:.2f}")
         break
 ```
 
@@ -631,29 +648,31 @@ weights = {
     "latency": 0.4,     # 40% weight on latency
 }
 
-# Normalize metrics to [0, 1] range
-throughputs = [per_value_metrics[str(v)]["request_throughput_avg"]["mean"]
-               for v in param_values]
-latencies = [per_value_metrics[str(v)]["ttft_p99_ms"]["mean"]
-             for v in param_values]
+# Extract all throughputs and latencies
+combinations = sweep_data["per_combination_metrics"]
+throughputs = [c["metrics"]["request_throughput_avg"]["mean"] for c in combinations]
+latencies = [c["metrics"]["ttft_p99_ms"]["mean"] for c in combinations]
 
 max_tp = max(throughputs)
 min_lat = min(latencies)
 max_lat = max(latencies)
 
 scores = []
-for i, value in enumerate(param_values):
+for combo in combinations:
+    tp = combo["metrics"]["request_throughput_avg"]["mean"]
+    lat = combo["metrics"]["ttft_p99_ms"]["mean"]
+
     # Normalize: higher is better for both
-    tp_score = throughputs[i] / max_tp
-    lat_score = 1 - (latencies[i] - min_lat) / (max_lat - min_lat)
+    tp_score = tp / max_tp
+    lat_score = 1 - (lat - min_lat) / (max_lat - min_lat) if max_lat > min_lat else 1.0
 
     # Weighted combination
     score = weights["throughput"] * tp_score + weights["latency"] * lat_score
-    scores.append((value, score))
+    scores.append((combo["parameters"], score))
 
 # Find best configuration
-best_value, best_score = max(scores, key=lambda x: x[1])
-print(f"Best configuration for given weights: {metadata['parameter_name']}={best_value}")
+best_params, best_score = max(scores, key=lambda x: x[1])
+print(f"Best configuration for given weights: {best_params}")
 print(f"  Score: {best_score:.3f}")
 ```
 

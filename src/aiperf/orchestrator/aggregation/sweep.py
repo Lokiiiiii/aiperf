@@ -3,7 +3,7 @@
 """Sweep aggregation for parameter sweeping."""
 
 from enum import Enum
-from typing import NamedTuple
+from typing import Any, NamedTuple
 
 
 class OptimizationDirection(Enum):
@@ -33,6 +33,30 @@ class Objective(NamedTuple):
     direction: OptimizationDirection
 
 
+class ParameterCombination(NamedTuple):
+    """A specific combination of parameter values.
+
+    Args:
+        parameters: Dictionary mapping parameter names to their values
+            Example: {"concurrency": 2, "request_rate": 10}
+    """
+
+    parameters: dict[str, Any]
+
+    def to_dict(self) -> dict[str, Any]:
+        """Convert to dictionary format."""
+        return self.parameters.copy()
+
+    def __str__(self) -> str:
+        """String representation for logging/display."""
+        parts = [f"{k}={v}" for k, v in sorted(self.parameters.items())]
+        return ", ".join(parts)
+
+    def __hash__(self) -> int:
+        """Make hashable for use in sets/dicts."""
+        return hash(tuple(sorted(self.parameters.items())))
+
+
 # Default objectives for common use case
 DEFAULT_PARETO_OBJECTIVES = [
     Objective("request_throughput_avg", OptimizationDirection.MAXIMIZE),
@@ -41,16 +65,16 @@ DEFAULT_PARETO_OBJECTIVES = [
 
 
 def identify_pareto_optimal(
-    per_value_stats: dict[int, dict],
+    per_combination_stats: dict[ParameterCombination, dict],
     objectives: list[Objective] | None = None,
-) -> list[int]:
+) -> list[ParameterCombination]:
     """Identify Pareto optimal configurations across N objectives.
 
     A configuration is Pareto optimal if no other configuration is strictly better
     on ALL objectives simultaneously.
 
     Args:
-        per_value_stats: Statistics for each sweep value
+        per_combination_stats: Statistics for each parameter combination
         objectives: List of objectives to optimize. If None, uses DEFAULT_PARETO_OBJECTIVES
             (throughput vs latency).
 
@@ -60,7 +84,7 @@ def identify_pareto_optimal(
             ]
 
     Returns:
-        List of sweep values that are Pareto optimal
+        List of parameter combinations that are Pareto optimal
 
     Example:
         # 2D Pareto frontier (throughput vs latency) - uses defaults
@@ -79,19 +103,19 @@ def identify_pareto_optimal(
 
     pareto_optimal = []
 
-    for value1, stats1 in per_value_stats.items():
+    for combo1, stats1 in per_combination_stats.items():
         # Extract objective values for this configuration
         values1 = [stats1[obj.metric_key]["mean"] for obj in objectives]
 
         is_dominated = False
-        for value2, stats2 in per_value_stats.items():
-            if value1 == value2:
+        for combo2, stats2 in per_combination_stats.items():
+            if combo1 == combo2:
                 continue
 
             # Extract objective values for comparison configuration
             values2 = [stats2[obj.metric_key]["mean"] for obj in objectives]
 
-            # Check if value2 dominates value1
+            # Check if combo2 dominates combo1
             # Domination means: better or equal on all objectives, AND strictly better on at least one
             better_or_equal_count = 0
             strictly_better_count = 0
@@ -112,85 +136,15 @@ def identify_pareto_optimal(
                         better_or_equal_count += 1
                     # else: values2[i] > values1[i], worse on this objective
 
-            # value2 dominates value1 if it's better or equal on all AND strictly better on at least one
+            # combo2 dominates combo1 if it's better or equal on all AND strictly better on at least one
             if better_or_equal_count == len(objectives) and strictly_better_count > 0:
                 is_dominated = True
                 break
 
         if not is_dominated:
-            pareto_optimal.append(value1)
+            pareto_optimal.append(combo1)
 
-    return sorted(pareto_optimal)
-
-
-def analyze_trends(
-    per_value_stats: dict[int, dict],
-    sweep_values: list[int],
-    metric_key: str,
-) -> dict:
-    """Analyze how a metric changes across sweep values.
-
-    Args:
-        per_value_stats: Statistics for each sweep value
-        sweep_values: List of sweep values in order
-        metric_key: The metric to analyze (e.g., "request_throughput_avg")
-
-    Returns:
-        Dictionary with:
-            - inflection_points: List of sweep values where trend changes significantly
-            - rate_of_change: List of changes between consecutive values
-
-    Note: Pattern (increasing/decreasing/plateau/mixed) is derivable from rate_of_change:
-        - All positive → increasing
-        - All negative → decreasing
-        - All near zero → plateau
-        - Mixed signs → mixed
-
-    Example:
-        >>> per_value_stats = {
-        ...     10: {"request_throughput_avg": {"mean": 100}},
-        ...     20: {"request_throughput_avg": {"mean": 180}},
-        ...     30: {"request_throughput_avg": {"mean": 270}},
-        ...     40: {"request_throughput_avg": {"mean": 285}},
-        ... }
-        >>> result = analyze_trends(per_value_stats, [10, 20, 30, 40], "request_throughput_avg")
-        >>> result["rate_of_change"]
-        [80.0, 90.0, 15.0]
-        >>> result["inflection_points"]
-        [40]
-    """
-    # Extract metric values in sweep order
-    values = [per_value_stats[v][metric_key]["mean"] for v in sweep_values]
-
-    # Compute rate of change between consecutive values
-    rate_of_change = []
-    for i in range(1, len(values)):
-        delta = values[i] - values[i - 1]
-        rate_of_change.append(delta)
-
-    # Identify inflection points (where rate of change changes significantly)
-    inflection_points = []
-    for i in range(1, len(rate_of_change)):
-        prev_rate = rate_of_change[i - 1]
-        curr_rate = rate_of_change[i]
-
-        # Significant change in rate: sign flip or magnitude change > 50%
-        # Sign flip: product is negative
-        has_sign_flip = prev_rate * curr_rate < 0
-
-        # Magnitude change > 50% (avoid division by zero)
-        has_magnitude_change = False
-        if prev_rate != 0:
-            has_magnitude_change = abs(curr_rate - prev_rate) > 0.5 * abs(prev_rate)
-
-        if has_sign_flip or has_magnitude_change:
-            # Inflection point is at sweep_values[i+1] (the value where the new rate starts)
-            inflection_points.append(sweep_values[i + 1])
-
-    return {
-        "inflection_points": inflection_points,
-        "rate_of_change": rate_of_change,
-    }
+    return sorted(pareto_optimal, key=lambda c: tuple(sorted(c.parameters.items())))
 
 
 class SweepAggregation:
@@ -198,100 +152,108 @@ class SweepAggregation:
 
     @staticmethod
     def compute(
-        per_value_stats: dict[int, dict],
-        sweep_values: list[int],
-        parameter_name: str = "concurrency",
+        per_combination_stats: dict[ParameterCombination, dict],
+        sweep_parameters: list[dict[str, Any]],
     ) -> dict:
         """Compute sweep-level aggregate statistics.
 
         Args:
-            per_value_stats: Statistics for each sweep value (value -> confidence stats)
-            sweep_values: List of sweep values in order
-            parameter_name: Name of the parameter being swept (default: "concurrency")
+            per_combination_stats: Statistics for each parameter combination
+            sweep_parameters: List of parameter definitions, each with:
+                - name: Parameter name (e.g., "concurrency")
+                - values: List of values for this parameter
 
         Returns:
             Dictionary with:
-                - metadata: Parameter name, values, and counts
-                - per_value_metrics: Metrics for each sweep value
-                - best_configurations: Best values for key metrics
-                - pareto_optimal: List of Pareto optimal sweep values
-                - trends: Trend analysis for key metrics
+                - metadata: Sweep parameters and configuration
+                - per_combination_metrics: Metrics for each parameter combination
+                - best_configurations: Best combinations for key metrics
+                - pareto_optimal: List of Pareto optimal combinations
 
         Example:
-            >>> per_value_stats = {
-            ...     10: {"request_throughput_avg": {"mean": 100, "std": 5, ...}},
-            ...     20: {"request_throughput_avg": {"mean": 180, "std": 8, ...}},
+            >>> combo1 = ParameterCombination({"concurrency": 2, "request_rate": 10})
+            >>> combo2 = ParameterCombination({"concurrency": 4, "request_rate": 10})
+            >>> per_combination_stats = {
+            ...     combo1: {"request_throughput_avg": {"mean": 100, "std": 5, ...}},
+            ...     combo2: {"request_throughput_avg": {"mean": 180, "std": 8, ...}},
             ... }
-            >>> result = SweepAggregation.compute(per_value_stats, [10, 20], "concurrency")
-            >>> result["metadata"]["num_values"]
+            >>> sweep_params = [
+            ...     {"name": "concurrency", "values": [2, 4]},
+            ...     {"name": "request_rate", "values": [10]},
+            ... ]
+            >>> result = SweepAggregation.compute(per_combination_stats, sweep_params)
+            >>> result["metadata"]["num_combinations"]
             2
-            >>> result["best_configurations"]["best_throughput"]["value"]
-            20
         """
+        # Calculate total number of combinations
+        num_combinations = 1
+        for param in sweep_parameters:
+            num_combinations *= len(param["values"])
+
         # Build metadata section
         metadata = {
-            "parameter_name": parameter_name,
-            "parameter_values": sweep_values,
-            "num_values": len(sweep_values),
+            "sweep_parameters": sweep_parameters,
+            "num_combinations": num_combinations,
         }
 
-        # Per-value metrics section (convert int keys to strings for JSON compatibility)
-        per_value_metrics = {
-            str(value): stats for value, stats in per_value_stats.items()
-        }
+        # Per-combination metrics section (convert to list format)
+        per_combination_metrics = [
+            {"parameters": combo.to_dict(), "metrics": stats}
+            for combo, stats in per_combination_stats.items()
+        ]
 
         # Identify best configurations
         best_configurations = {}
-        if per_value_stats:
+        if per_combination_stats:
             # Best throughput: highest request_throughput_avg
             if all(
-                "request_throughput_avg" in stats for stats in per_value_stats.values()
+                "request_throughput_avg" in stats
+                for stats in per_combination_stats.values()
             ):
-                best_throughput_value = max(
-                    per_value_stats.items(),
+                best_throughput_combo, best_throughput_stats = max(
+                    per_combination_stats.items(),
                     key=lambda item: item[1]["request_throughput_avg"]["mean"],
                 )
                 best_configurations["best_throughput"] = {
-                    "value": best_throughput_value[0],
-                    "metric": best_throughput_value[1]["request_throughput_avg"][
-                        "mean"
-                    ],
-                    "unit": best_throughput_value[1]["request_throughput_avg"].get(
+                    "parameters": best_throughput_combo.to_dict(),
+                    "metric": best_throughput_stats["request_throughput_avg"]["mean"],
+                    "unit": best_throughput_stats["request_throughput_avg"].get(
                         "unit", "requests/sec"
                     ),
                 }
 
             # Best latency: lowest ttft_p99_ms (or request_latency_p99 as fallback)
             latency_metric = None
-            if all("ttft_p99_ms" in stats for stats in per_value_stats.values()):
+            if all("ttft_p99_ms" in stats for stats in per_combination_stats.values()):
                 latency_metric = "ttft_p99_ms"
             elif all(
-                "request_latency_p99" in stats for stats in per_value_stats.values()
+                "request_latency_p99" in stats
+                for stats in per_combination_stats.values()
             ):
                 latency_metric = "request_latency_p99"
 
             if latency_metric:
-                best_latency_value = min(
-                    per_value_stats.items(),
+                best_latency_combo, best_latency_stats = min(
+                    per_combination_stats.items(),
                     key=lambda item: item[1][latency_metric]["mean"],
                 )
                 best_configurations["best_latency_p99"] = {
-                    "value": best_latency_value[0],
-                    "metric": best_latency_value[1][latency_metric]["mean"],
-                    "unit": best_latency_value[1][latency_metric].get("unit", "ms"),
+                    "parameters": best_latency_combo.to_dict(),
+                    "metric": best_latency_stats[latency_metric]["mean"],
+                    "unit": best_latency_stats[latency_metric].get("unit", "ms"),
                 }
 
         # Identify Pareto optimal configurations
-        # Only compute if we have the required metrics for default objectives in ALL sweep values
         pareto_optimal = []
-        if per_value_stats:
-            # Check if all required metrics are present in ALL sweep values
+        if per_combination_stats:
+            # Check if all required metrics are present in ALL combinations
             has_required_metrics = all(
                 all(obj.metric_key in stats for obj in DEFAULT_PARETO_OBJECTIVES)
-                for stats in per_value_stats.values()
+                for stats in per_combination_stats.values()
             )
             if has_required_metrics:
-                pareto_optimal = identify_pareto_optimal(per_value_stats)
+                pareto_combos = identify_pareto_optimal(per_combination_stats)
+                pareto_optimal = [combo.to_dict() for combo in pareto_combos]
             else:
                 # Try fallback objectives (request_latency_p99 instead of ttft_p99_ms)
                 fallback_objectives = [
@@ -300,39 +262,17 @@ class SweepAggregation:
                 ]
                 has_fallback_metrics = all(
                     all(obj.metric_key in stats for obj in fallback_objectives)
-                    for stats in per_value_stats.values()
+                    for stats in per_combination_stats.values()
                 )
                 if has_fallback_metrics:
-                    pareto_optimal = identify_pareto_optimal(
-                        per_value_stats, fallback_objectives
+                    pareto_combos = identify_pareto_optimal(
+                        per_combination_stats, fallback_objectives
                     )
-
-        # Analyze trends for key metrics
-        trends = {}
-        if per_value_stats and len(sweep_values) > 1:
-            # Get the first stats dict to determine available metrics
-            first_stats = next(iter(per_value_stats.values()))
-
-            # Key metrics to analyze for trends (with fallbacks)
-            key_metrics = ["request_throughput_avg"]
-
-            # Add latency metric (prefer ttft_p99_ms, fallback to request_latency_p99)
-            if "ttft_p99_ms" in first_stats:
-                key_metrics.append("ttft_p99_ms")
-            elif "request_latency_p99" in first_stats:
-                key_metrics.append("request_latency_p99")
-
-            for metric_key in key_metrics:
-                # Check if this metric exists in all sweep values
-                if all(metric_key in stats for stats in per_value_stats.values()):
-                    trends[metric_key] = analyze_trends(
-                        per_value_stats, sweep_values, metric_key
-                    )
+                    pareto_optimal = [combo.to_dict() for combo in pareto_combos]
 
         return {
             "metadata": metadata,
-            "per_value_metrics": per_value_metrics,
+            "per_combination_metrics": per_combination_metrics,
             "best_configurations": best_configurations,
             "pareto_optimal": pareto_optimal,
-            "trends": trends,
         }

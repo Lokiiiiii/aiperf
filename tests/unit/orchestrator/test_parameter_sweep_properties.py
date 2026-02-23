@@ -9,13 +9,12 @@ Each test validates a specific property to ensure the implementation meets requi
 from pathlib import Path
 
 import pytest
-from hypothesis import assume, given, settings
+from hypothesis import given, settings
 from hypothesis import strategies as st
 
 from aiperf.common.config import EndpointConfig, UserConfig
 from aiperf.common.models.export_models import JsonMetricResult
 from aiperf.orchestrator.aggregation.sweep import (
-    analyze_trends,
     identify_pareto_optimal,
 )
 from aiperf.orchestrator.models import RunResult
@@ -130,7 +129,7 @@ class TestProperty2InvalidInputRejection:
 
         with pytest.raises(
             ValueError,
-            match="Invalid concurrency value|All concurrency values must be at least 1",
+            match="Invalid concurrency (list|values)|Parameter sweep requires at least 2 values",
         ):
             config.model_validate(config.model_dump())
 
@@ -605,7 +604,7 @@ class TestProperty2PBT:
         # Should raise validation error
         with pytest.raises(
             ValueError,
-            match="Invalid concurrency value|All concurrency values must be at least 1",
+            match="Invalid concurrency (list|values)|Parameter sweep requires at least 2 values",
         ):
             config.model_validate(config.model_dump())
 
@@ -849,30 +848,35 @@ class TestProperty13PBT:
         a configuration should be identified as Pareto optimal if and only if no other
         configuration has both higher throughput AND lower latency.
         """
-        # Create per-value stats from generated metrics
-        per_value_stats = {}
+        from aiperf.orchestrator.aggregation.sweep import ParameterCombination
+
+        # Create per-combination stats from generated metrics
+        per_combination_stats = {}
+        combos = []
         for i, (throughput, latency) in enumerate(metrics):
-            per_value_stats[i] = {
+            combo = ParameterCombination({"config_id": i})
+            combos.append(combo)
+            per_combination_stats[combo] = {
                 "request_throughput_avg": {"mean": throughput},
                 "ttft_p99_ms": {"mean": latency},
             }
 
         # Identify Pareto optimal points
-        pareto = identify_pareto_optimal(per_value_stats)
+        pareto = identify_pareto_optimal(per_combination_stats)
 
         # Verify: each Pareto optimal point is not dominated
         for p in pareto:
-            p_throughput = per_value_stats[p]["request_throughput_avg"]["mean"]
-            p_latency = per_value_stats[p]["ttft_p99_ms"]["mean"]
+            p_throughput = per_combination_stats[p]["request_throughput_avg"]["mean"]
+            p_latency = per_combination_stats[p]["ttft_p99_ms"]["mean"]
 
-            for other in per_value_stats:
+            for other in per_combination_stats:
                 if other == p:
                     continue
 
-                other_throughput = per_value_stats[other]["request_throughput_avg"][
-                    "mean"
-                ]
-                other_latency = per_value_stats[other]["ttft_p99_ms"]["mean"]
+                other_throughput = per_combination_stats[other][
+                    "request_throughput_avg"
+                ]["mean"]
+                other_latency = per_combination_stats[other]["ttft_p99_ms"]["mean"]
 
                 # Should not be strictly better on both (domination)
                 # Domination: better or equal on all, strictly better on at least one
@@ -897,21 +901,21 @@ class TestProperty13PBT:
                 )
 
         # Verify: each non-Pareto point is dominated by at least one Pareto point
-        non_pareto = [i for i in per_value_stats if i not in pareto]
+        non_pareto = [combo for combo in per_combination_stats if combo not in pareto]
         for np in non_pareto:
-            np_throughput = per_value_stats[np]["request_throughput_avg"]["mean"]
-            np_latency = per_value_stats[np]["ttft_p99_ms"]["mean"]
+            np_throughput = per_combination_stats[np]["request_throughput_avg"]["mean"]
+            np_latency = per_combination_stats[np]["ttft_p99_ms"]["mean"]
 
             # Should be dominated by at least one point
             is_dominated = False
-            for other in per_value_stats:
+            for other in per_combination_stats:
                 if other == np:
                     continue
 
-                other_throughput = per_value_stats[other]["request_throughput_avg"][
-                    "mean"
-                ]
-                other_latency = per_value_stats[other]["ttft_p99_ms"]["mean"]
+                other_throughput = per_combination_stats[other][
+                    "request_throughput_avg"
+                ]["mean"]
+                other_latency = per_combination_stats[other]["ttft_p99_ms"]["mean"]
 
                 better_throughput = other_throughput > np_throughput
                 better_latency = other_latency < np_latency
@@ -943,141 +947,56 @@ class TestProperty14PBT:
     should correctly reflect the direction of change.
     """
 
-    @given(
-        st.lists(
-            st.integers(min_value=1, max_value=100),
-            min_size=2,
-            max_size=10,
-            unique=True,
-        ),
-        st.lists(
-            st.floats(
-                min_value=1.0, max_value=1000.0, allow_nan=False, allow_infinity=False
-            ),
-            min_size=2,
-            max_size=10,
-        ),
-    )
-    @settings(max_examples=100)
-    def test_pbt_trend_rate_of_change_correctness(self, sweep_values, metric_values):
-        """Property 14: Rate of change correctly reflects metric changes.
+    # NOTE: The following trend analysis tests are commented out because
+    # the analyze_trends() function was removed from the design.
+    # Trend analysis (per_parameter_trends field) was deemed not useful
+    # at this moment and removed from the sweep aggregate format.
 
-        Feature: parameter-sweeping, Property 14: For any metric across sweep values,
-        the trend pattern should correctly reflect the direction of change.
-        """
-        assume(len(sweep_values) == len(metric_values))
+    # @given(
+    #     st.lists(
+    #         st.integers(min_value=1, max_value=100),
+    #         min_size=2,
+    #         max_size=10,
+    #         unique=True,
+    #     ),
+    #     st.lists(
+    #         st.floats(
+    #             min_value=1.0, max_value=1000.0, allow_nan=False, allow_infinity=False
+    #         ),
+    #         min_size=2,
+    #         max_size=10,
+    #     ),
+    # )
+    # @settings(max_examples=100)
+    # def test_pbt_trend_rate_of_change_correctness(self, sweep_values, metric_values):
+    #     """Property 14: Rate of change correctly reflects metric changes."""
+    #     pass
 
-        # Sort sweep values to ensure proper ordering
-        sorted_pairs = sorted(zip(sweep_values, metric_values, strict=True))
-        sweep_values = [p[0] for p in sorted_pairs]
-        metric_values = [p[1] for p in sorted_pairs]
+    # @given(
+    #     st.lists(
+    #         st.integers(min_value=1, max_value=100),
+    #         min_size=3,
+    #         max_size=10,
+    #         unique=True,
+    #     )
+    # )
+    # @settings(max_examples=50)
+    # def test_pbt_trend_inflection_point_detection(self, sweep_values):
+    #     """Property 14: Inflection points are detected when trend changes significantly."""
+    #     pass
 
-        # Create per-value stats
-        per_value_stats = {}
-        for value, metric in zip(sweep_values, metric_values, strict=True):
-            per_value_stats[value] = {"test_metric": {"mean": metric}}
-
-        # Analyze trends
-        result = analyze_trends(per_value_stats, sweep_values, "test_metric")
-
-        # Verify rate of change is correct
-        rate_of_change = result["rate_of_change"]
-        assert len(rate_of_change) == len(metric_values) - 1
-
-        for i in range(len(rate_of_change)):
-            expected_change = metric_values[i + 1] - metric_values[i]
-            assert abs(rate_of_change[i] - expected_change) < 1e-6, (
-                f"Rate of change mismatch at index {i}: "
-                f"expected {expected_change}, got {rate_of_change[i]}"
-            )
-
-    @given(
-        st.lists(
-            st.integers(min_value=1, max_value=100),
-            min_size=3,
-            max_size=10,
-            unique=True,
-        )
-    )
-    @settings(max_examples=50)
-    def test_pbt_trend_inflection_point_detection(self, sweep_values):
-        """Property 14: Inflection points are detected when trend changes significantly.
-
-        Feature: parameter-sweeping, Property 14: Trend analysis should identify
-        inflection points where performance characteristics change significantly.
-        """
-        # Sort sweep values
-        sweep_values = sorted(sweep_values)
-
-        # Create metric values with known inflection point in the middle
-        # Pattern: increasing, then decreasing
-        mid_point = len(sweep_values) // 2
-        metric_values = []
-        for i in range(len(sweep_values)):
-            if i < mid_point:
-                metric_values.append(float(i * 10))  # Increasing
-            else:
-                metric_values.append(float((len(sweep_values) - i) * 10))  # Decreasing
-
-        # Create per-value stats
-        per_value_stats = {}
-        for value, metric in zip(sweep_values, metric_values, strict=True):
-            per_value_stats[value] = {"test_metric": {"mean": metric}}
-
-        # Analyze trends
-        result = analyze_trends(per_value_stats, sweep_values, "test_metric")
-
-        # Should detect inflection point (sign flip from positive to negative)
-        inflection_points = result["inflection_points"]
-
-        # With this pattern, we expect at least one inflection point
-        # (where rate changes from positive to negative)
-        if len(sweep_values) > 2:
-            assert len(inflection_points) > 0, (
-                f"Expected inflection points for pattern with sign flip, "
-                f"but got none. Rates: {result['rate_of_change']}"
-            )
-
-    @given(
-        st.lists(
-            st.integers(min_value=1, max_value=100),
-            min_size=3,
-            max_size=10,
-            unique=True,
-        ),
-        st.floats(
-            min_value=1.0, max_value=100.0, allow_nan=False, allow_infinity=False
-        ),
-    )
-    @settings(max_examples=50)
-    def test_pbt_trend_plateau_detection(self, sweep_values, constant_value):
-        """Property 14: Plateau pattern (near-zero rate of change) is correctly identified.
-
-        Feature: parameter-sweeping, Property 14: Trend analysis should correctly
-        identify plateau patterns where metrics remain relatively constant.
-        """
-        # Sort sweep values
-        sweep_values = sorted(sweep_values)
-
-        # Create constant metric values (plateau)
-        metric_values = [constant_value] * len(sweep_values)
-
-        # Create per-value stats
-        per_value_stats = {}
-        for value, metric in zip(sweep_values, metric_values, strict=True):
-            per_value_stats[value] = {"test_metric": {"mean": metric}}
-
-        # Analyze trends
-        result = analyze_trends(per_value_stats, sweep_values, "test_metric")
-
-        # All rates of change should be zero (plateau)
-        rate_of_change = result["rate_of_change"]
-        assert all(abs(rate) < 1e-6 for rate in rate_of_change), (
-            f"Expected all rates to be near zero for plateau, but got {rate_of_change}"
-        )
-
-        # Should have no inflection points (no significant changes)
-        assert len(result["inflection_points"]) == 0, (
-            f"Expected no inflection points for plateau, "
-            f"but got {result['inflection_points']}"
-        )
+    # @given(
+    #     st.lists(
+    #         st.integers(min_value=1, max_value=100),
+    #         min_size=3,
+    #         max_size=10,
+    #         unique=True,
+    #     ),
+    #     st.floats(
+    #         min_value=1.0, max_value=100.0, allow_nan=False, allow_infinity=False
+    #     ),
+    # )
+    # @settings(max_examples=50)
+    # def test_pbt_trend_plateau_detection(self, sweep_values, constant_value):
+    #     """Property 14: Plateau pattern (near-zero rate of change) is correctly identified."""
+    #     pass

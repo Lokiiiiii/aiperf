@@ -4,7 +4,7 @@
 """Tests for cli_runner.py"""
 
 from pathlib import Path
-from unittest.mock import AsyncMock, MagicMock, Mock, patch
+from unittest.mock import MagicMock, Mock, patch
 
 import pytest
 
@@ -272,19 +272,12 @@ class TestRunMultiBenchmark:
         return result
 
     @patch("aiperf.orchestrator.orchestrator.MultiRunOrchestrator")
-    @patch("aiperf.orchestrator.aggregation.confidence.ConfidenceAggregation")
-    @patch("aiperf.exporters.aggregate.AggregateConfidenceJsonExporter")
-    @patch("aiperf.exporters.aggregate.AggregateConfidenceCsvExporter")
     def test_multi_run_success_with_aggregation(
         self,
-        mock_csv_exporter_cls: Mock,
-        mock_json_exporter_cls: Mock,
-        mock_aggregation_cls: Mock,
         mock_orchestrator_cls: Mock,
         user_config_multi: UserConfig,
         service_config: ServiceConfig,
         mock_run_result: MagicMock,
-        mock_aggregate_result: MagicMock,
         tmp_path: Path,
     ):
         """Test successful multi-run with aggregation."""
@@ -295,44 +288,22 @@ class TestRunMultiBenchmark:
 
         # Mock orchestrator to return 3 successful results
         mock_orchestrator = MagicMock()
-        mock_orchestrator.execute.return_value = [
+        mock_orchestrator.execute_and_export.return_value = [
             mock_run_result,
             mock_run_result,
             mock_run_result,
         ]
         mock_orchestrator_cls.return_value = mock_orchestrator
 
-        # Mock aggregation
-        mock_aggregation = MagicMock()
-        mock_aggregation.aggregate.return_value = mock_aggregate_result
-        mock_aggregation_cls.return_value = mock_aggregation
-
-        # Mock exporters with async export() method
-        mock_json_exporter = MagicMock()
-        mock_json_exporter.export = AsyncMock(return_value=tmp_path / "aggregate.json")
-        mock_json_exporter_cls.return_value = mock_json_exporter
-
-        mock_csv_exporter = MagicMock()
-        mock_csv_exporter.export = AsyncMock(return_value=tmp_path / "aggregate.csv")
-        mock_csv_exporter_cls.return_value = mock_csv_exporter
-
         _run_multi_benchmark(user_config_multi, service_config)
 
-        # Verify orchestrator was created and executed with strategy=None (auto-detect)
+        # Verify orchestrator was created and execute_and_export was called with strategy=None (auto-detect)
         mock_orchestrator_cls.assert_called_once_with(
             base_dir=tmp_path, service_config=service_config
         )
-        mock_orchestrator.execute.assert_called_once_with(
+        mock_orchestrator.execute_and_export.assert_called_once_with(
             user_config_multi, strategy=None
         )
-
-        # Verify aggregation was performed
-        mock_aggregation_cls.assert_called_once_with(confidence_level=0.95)
-        mock_aggregation.aggregate.assert_called_once()
-
-        # Verify exporters were called
-        mock_json_exporter.export.assert_called_once()
-        mock_csv_exporter.export.assert_called_once()
 
     @patch("aiperf.orchestrator.orchestrator.MultiRunOrchestrator")
     def test_multi_run_orchestrator_exception(
@@ -349,7 +320,9 @@ class TestRunMultiBenchmark:
 
         # Mock orchestrator to raise exception
         mock_orchestrator = MagicMock()
-        mock_orchestrator.execute.side_effect = RuntimeError("Orchestrator failed")
+        mock_orchestrator.execute_and_export.side_effect = RuntimeError(
+            "Orchestrator failed"
+        )
         mock_orchestrator_cls.return_value = mock_orchestrator
 
         with pytest.raises(RuntimeError, match="Orchestrator failed"):
@@ -375,7 +348,7 @@ class TestRunMultiBenchmark:
         failed_result.label = "run_2"
 
         mock_orchestrator = MagicMock()
-        mock_orchestrator.execute.return_value = [
+        mock_orchestrator.execute_and_export.return_value = [
             mock_run_result,
             failed_result,
             failed_result,
@@ -406,7 +379,7 @@ class TestRunMultiBenchmark:
         failed_result.label = "run_1"
 
         mock_orchestrator = MagicMock()
-        mock_orchestrator.execute.return_value = [
+        mock_orchestrator.execute_and_export.return_value = [
             failed_result,
             failed_result,
             failed_result,
@@ -417,140 +390,3 @@ class TestRunMultiBenchmark:
             _run_multi_benchmark(user_config_multi, service_config)
 
         assert exc_info.value.code == 1
-
-
-class TestPrintAggregateSummary:
-    """Test the _print_aggregate_summary function."""
-
-    @pytest.fixture
-    def mock_logger(self):
-        """Create a mock logger."""
-        return MagicMock()
-
-    @pytest.fixture
-    def aggregate_result_with_metrics(self):
-        """Create an aggregate result with metrics."""
-        result = MagicMock()
-        result.aggregation_type = "confidence"
-        result.num_runs = 3
-        result.num_successful_runs = 3
-        result.failed_runs = []
-        result.metadata = {"confidence_level": 0.95}
-
-        # Create mock metrics
-        mock_metric = MagicMock()
-        mock_metric.mean = 100.5
-        mock_metric.std = 5.2
-        mock_metric.min = 95.0
-        mock_metric.max = 105.0
-        mock_metric.cv = 0.052
-        mock_metric.ci_low = 98.0
-        mock_metric.ci_high = 103.0
-        mock_metric.unit = "req/s"
-
-        # Use actual flattened metric keys that match the aggregation output
-        result.metrics = {
-            "request_throughput_avg": mock_metric,
-            "time_to_first_token_avg": mock_metric,
-        }
-        return result
-
-    @pytest.fixture
-    def aggregate_result_with_failures(self):
-        """Create an aggregate result with failed runs."""
-        result = MagicMock()
-        result.aggregation_type = "confidence"
-        result.num_runs = 3
-        result.num_successful_runs = 2
-        result.failed_runs = [
-            {"label": "run_3", "error": "Connection timeout"},
-        ]
-        result.metadata = {"confidence_level": 0.95}
-        result.metrics = {}
-        return result
-
-    def test_prints_basic_summary_info(
-        self, aggregate_result_with_metrics: MagicMock, mock_logger: MagicMock
-    ):
-        """Test that basic summary information is printed."""
-        from aiperf.cli_runner import _print_aggregate_summary
-
-        _print_aggregate_summary(aggregate_result_with_metrics, mock_logger)
-
-        # Verify logger.info was called with expected content
-        info_calls = [call[0][0] for call in mock_logger.info.call_args_list]
-
-        assert any("AGGREGATE STATISTICS SUMMARY" in call for call in info_calls)
-        assert any("Aggregation Type: confidence" in call for call in info_calls)
-        assert any("Total Runs: 3" in call for call in info_calls)
-        assert any("Successful Runs: 3" in call for call in info_calls)
-        assert any("Confidence Level: 95%" in call for call in info_calls)
-
-    def test_prints_failed_runs_warning(
-        self, aggregate_result_with_failures: MagicMock, mock_logger: MagicMock
-    ):
-        """Test that failed runs are printed as warnings."""
-        from aiperf.cli_runner import _print_aggregate_summary
-
-        _print_aggregate_summary(aggregate_result_with_failures, mock_logger)
-
-        # Verify logger.warning was called for failed runs
-        warning_calls = [call[0][0] for call in mock_logger.warning.call_args_list]
-
-        assert any("Failed Runs (1):" in call for call in warning_calls)
-        assert any("run_3: Connection timeout" in call for call in warning_calls)
-
-    def test_prints_key_metrics(
-        self, aggregate_result_with_metrics: MagicMock, mock_logger: MagicMock
-    ):
-        """Test that key metrics are printed with correct formatting."""
-        from aiperf.cli_runner import _print_aggregate_summary
-
-        _print_aggregate_summary(aggregate_result_with_metrics, mock_logger)
-
-        # Verify metrics were printed
-        info_calls = [call[0][0] for call in mock_logger.info.call_args_list]
-
-        # Check for the dynamic display name format (e.g., "Request Throughput (Avg)")
-        assert any("Request Throughput" in call for call in info_calls)
-        assert any("Mean:" in call and "100.5000" in call for call in info_calls)
-        assert any("Std Dev:" in call and "5.2000" in call for call in info_calls)
-        assert any("CV:" in call and "5.20%" in call for call in info_calls)
-
-    def test_prints_interpretation_guide(
-        self, aggregate_result_with_metrics: MagicMock, mock_logger: MagicMock
-    ):
-        """Test that interpretation guide is printed."""
-        from aiperf.cli_runner import _print_aggregate_summary
-
-        _print_aggregate_summary(aggregate_result_with_metrics, mock_logger)
-
-        # Verify interpretation guide was printed
-        info_calls = [call[0][0] for call in mock_logger.info.call_args_list]
-
-        assert any(
-            "Coefficient of Variation (CV) Interpretation Guide:" in call
-            for call in info_calls
-        )
-        assert any("CV < 5%:" in call for call in info_calls)
-        assert any(
-            "Confidence Interval (CI) Interpretation:" in call for call in info_calls
-        )
-
-    def test_handles_empty_metrics(self, mock_logger: MagicMock):
-        """Test that empty metrics are handled gracefully."""
-        from aiperf.cli_runner import _print_aggregate_summary
-
-        result = MagicMock()
-        result.aggregation_type = "confidence"
-        result.num_runs = 3
-        result.num_successful_runs = 3
-        result.failed_runs = []
-        result.metadata = {"confidence_level": 0.95}
-        result.metrics = {}
-
-        _print_aggregate_summary(result, mock_logger)
-
-        # Verify warning was logged for no metrics
-        warning_calls = [call[0][0] for call in mock_logger.warning.call_args_list]
-        assert any("No key metrics found" in call for call in warning_calls)

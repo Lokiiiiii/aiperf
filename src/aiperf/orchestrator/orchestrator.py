@@ -57,6 +57,251 @@ class MultiRunOrchestrator:
         self.base_dir = Path(base_dir)
         self.service_config = service_config
 
+    def execute_and_export(
+        self, base_config: UserConfig, strategy: ExecutionStrategy | None = None
+    ) -> list[RunResult]:
+        """Execute benchmark, aggregate results, and export aggregates.
+
+        This is the main entry point that handles the complete workflow:
+        1. Execute runs
+        2. Aggregate results (if applicable)
+        3. Export aggregates (if applicable)
+
+        Follows the same pattern as SystemController which handles execution + export.
+
+        Args:
+            base_config: Base benchmark configuration
+            strategy: Optional execution strategy. If None, strategy is auto-detected
+
+        Returns:
+            List of RunResult, one per run executed
+        """
+        # Execute runs
+        results = self.execute(base_config, strategy)
+
+        # Aggregate and export results
+        self._aggregate_and_export(results, base_config)
+
+        return results
+
+    def _aggregate_and_export(
+        self, results: list[RunResult], config: UserConfig
+    ) -> None:
+        """Aggregate results and export aggregate files.
+
+        Args:
+            results: List of run results from execute()
+            config: User configuration used for execution
+        """
+        # Aggregate results
+        aggregates = self.aggregate_results(results, config)
+
+        if not aggregates:
+            # No aggregation needed (e.g., sweep-only mode)
+            return
+
+        # Export aggregates
+        if "aggregate" in aggregates:
+            # Confidence-only mode
+            self._export_confidence_aggregate(aggregates["aggregate"], config)
+        elif "per_value_aggregates" in aggregates and "sweep_aggregate" in aggregates:
+            # Sweep + confidence mode
+            self._export_sweep_aggregates(
+                aggregates["per_value_aggregates"],
+                aggregates["sweep_aggregate"],
+                config,
+            )
+
+    def _export_confidence_aggregate(
+        self, aggregate_result: Any, config: UserConfig
+    ) -> None:
+        """Export confidence-only aggregate results.
+
+        Args:
+            aggregate_result: Aggregate result to export
+            config: User configuration
+        """
+        import asyncio
+
+        from aiperf.exporters.aggregate import (
+            AggregateConfidenceCsvExporter,
+            AggregateConfidenceJsonExporter,
+            AggregateExporterConfig,
+        )
+
+        # Determine export directory
+        aggregate_dir = self.base_dir / "profile_runs" / "aggregate"
+
+        exporter_config = AggregateExporterConfig(
+            result=aggregate_result,
+            output_dir=aggregate_dir,
+        )
+
+        async def export_artifacts() -> tuple[Path, Path]:
+            """Export aggregate artifacts asynchronously."""
+            await asyncio.to_thread(aggregate_dir.mkdir, parents=True, exist_ok=True)
+
+            json_exporter = AggregateConfidenceJsonExporter(exporter_config)
+            csv_exporter = AggregateConfidenceCsvExporter(exporter_config)
+
+            json_path, csv_path = await asyncio.gather(
+                json_exporter.export(),
+                csv_exporter.export(),
+            )
+
+            return json_path, csv_path
+
+        json_path, csv_path = asyncio.run(export_artifacts())
+
+        logger.info(f"Aggregate JSON written to: {json_path}")
+        logger.info(f"Aggregate CSV written to: {csv_path}")
+
+    def _export_sweep_aggregates(
+        self,
+        per_value_aggregates: dict[int, Any],
+        sweep_aggregate: Any,
+        config: UserConfig,
+    ) -> None:
+        """Export sweep + confidence aggregate results.
+
+        Args:
+            per_value_aggregates: Per-value aggregate results
+            sweep_aggregate: Sweep-level aggregate result
+            config: User configuration
+        """
+        import asyncio
+
+        from aiperf.exporters.aggregate import (
+            AggregateConfidenceCsvExporter,
+            AggregateConfidenceJsonExporter,
+            AggregateExporterConfig,
+            AggregateSweepCsvExporter,
+            AggregateSweepJsonExporter,
+        )
+
+        sweep_mode = sweep_aggregate.metadata.get("sweep_mode", "repeated")
+
+        # Detect parameter name from first aggregate
+        param_name = None
+        for aggregate in per_value_aggregates.values():
+            for key in ["concurrency", "request_rate"]:
+                if key in aggregate.metadata:
+                    param_name = key
+                    break
+            if param_name:
+                break
+
+        if not param_name:
+            logger.warning("Could not determine parameter name for export")
+            return
+
+        logger.info("Exporting per-value aggregates...")
+
+        # Export per-value aggregates
+        async def export_per_value(
+            param_value: int, aggregate: Any
+        ) -> tuple[Path, Path]:
+            """Export single per-value aggregate."""
+            # Determine directory based on sweep mode
+            if sweep_mode == "repeated":
+                agg_dir = self.base_dir / "aggregate" / f"{param_name}_{param_value}"
+            else:  # independent
+                agg_dir = self.base_dir / f"{param_name}_{param_value}" / "aggregate"
+
+            await asyncio.to_thread(agg_dir.mkdir, parents=True, exist_ok=True)
+
+            exporter_config = AggregateExporterConfig(
+                result=aggregate,
+                output_dir=agg_dir,
+            )
+
+            json_exporter = AggregateConfidenceJsonExporter(exporter_config)
+            csv_exporter = AggregateConfidenceCsvExporter(exporter_config)
+
+            json_path, csv_path = await asyncio.gather(
+                json_exporter.export(),
+                csv_exporter.export(),
+            )
+
+            return json_path, csv_path
+
+        # Export all per-value aggregates concurrently
+        async def export_all_per_value():
+            """Export all per-value aggregates."""
+            tasks = [
+                export_per_value(param_value, aggregate)
+                for param_value, aggregate in per_value_aggregates.items()
+            ]
+            return await asyncio.gather(*tasks)
+
+        asyncio.run(export_all_per_value())
+
+        logger.info(
+            f"Exported {len(per_value_aggregates)} per-value aggregates to {self.base_dir}"
+        )
+
+        # Export sweep-level aggregate
+        logger.info("Exporting sweep-level aggregate...")
+
+        # Determine sweep aggregate directory
+        if sweep_mode == "repeated":
+            sweep_dir = self.base_dir / "aggregate" / "sweep_aggregate"
+        else:  # independent
+            sweep_dir = self.base_dir / "sweep_aggregate"
+
+        exporter_config = AggregateExporterConfig(
+            result=sweep_aggregate,
+            output_dir=sweep_dir,
+        )
+
+        async def export_sweep() -> tuple[Path, Path]:
+            """Export sweep aggregate."""
+            await asyncio.to_thread(sweep_dir.mkdir, parents=True, exist_ok=True)
+
+            json_exporter = AggregateSweepJsonExporter(exporter_config)
+            csv_exporter = AggregateSweepCsvExporter(exporter_config)
+
+            json_path, csv_path = await asyncio.gather(
+                json_exporter.export(),
+                csv_exporter.export(),
+            )
+
+            return json_path, csv_path
+
+        json_path, csv_path = asyncio.run(export_sweep())
+
+        logger.info(f"  Sweep JSON: {json_path}")
+        logger.info(f"  Sweep CSV: {csv_path}")
+
+        # Log best configurations
+        best_configs = sweep_aggregate.metadata.get("best_configurations", {})
+        if best_configs:
+            logger.info("")
+            logger.info("Best Configurations:")
+            if "best_throughput" in best_configs:
+                best_throughput = best_configs["best_throughput"]
+                params_str = ", ".join(
+                    f"{k}={v}" for k, v in best_throughput["parameters"].items()
+                )
+                logger.info(
+                    f"  Best throughput: {params_str} "
+                    f"({best_throughput['metric']:.2f} {best_throughput['unit']})"
+                )
+            if "best_latency_p99" in best_configs:
+                best_latency = best_configs["best_latency_p99"]
+                params_str = ", ".join(
+                    f"{k}={v}" for k, v in best_latency["parameters"].items()
+                )
+                logger.info(
+                    f"  Best latency (p99): {params_str} "
+                    f"({best_latency['metric']:.2f} {best_latency['unit']})"
+                )
+
+        # Log Pareto optimal points
+        pareto_optimal = sweep_aggregate.metadata.get("pareto_optimal", [])
+        if pareto_optimal:
+            logger.info(f"  Pareto optimal points: {pareto_optimal}")
+
     def execute(
         self, base_config: UserConfig, strategy: ExecutionStrategy | None = None
     ) -> list[RunResult]:

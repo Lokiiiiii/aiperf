@@ -1,265 +1,213 @@
 # SPDX-FileCopyrightText: Copyright (c) 2025-2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
 
-"""Tests for per-value aggregation in cli_runner.py"""
+"""Tests for aggregation in MultiRunOrchestrator"""
 
 from pathlib import Path
-from unittest.mock import AsyncMock, Mock, patch
+from unittest.mock import Mock
 
 import pytest
 
-from aiperf.cli_runner import _aggregate_per_sweep_value
+from aiperf.common.config import ServiceConfig, UserConfig
 from aiperf.common.models.export_models import JsonMetricResult
 from aiperf.orchestrator.models import RunResult
+from aiperf.orchestrator.orchestrator import MultiRunOrchestrator
 
 
-class TestAggregatePerSweepValue:
-    """Test per-value aggregation for sweep + confidence mode."""
+class TestOrchestratorAggregation:
+    """Test aggregation methods in MultiRunOrchestrator."""
 
     @pytest.fixture
-    def mock_results_repeated_mode(self) -> list[RunResult]:
-        """Create mock results for repeated mode sweep + confidence.
+    def orchestrator(self, tmp_path: Path) -> MultiRunOrchestrator:
+        """Create orchestrator instance."""
+        service_config = ServiceConfig()
+        return MultiRunOrchestrator(base_dir=tmp_path, service_config=service_config)
 
-        Structure: 2 trials × 3 concurrency values = 6 runs
-        Trial 1: [10, 20, 30]
-        Trial 2: [10, 20, 30]
-        """
+    @pytest.fixture
+    def mock_config(self) -> UserConfig:
+        """Create mock user config."""
+        config = Mock(spec=UserConfig)
+        config.loadgen = Mock()
+        config.loadgen.confidence_level = 0.95
+        config.loadgen.profile_run_cooldown_seconds = 10
+        config.loadgen.num_profile_runs = 2
+        return config
+
+    @pytest.fixture
+    def mock_results_confidence_only(self) -> list[RunResult]:
+        """Create mock results for confidence-only mode (no sweep)."""
         results = []
-
-        # Trial 1
-        for value_index, concurrency in enumerate([10, 20, 30]):
+        for i in range(3):
             result = RunResult(
-                label=f"trial_0001_concurrency_{concurrency}",
+                label=f"trial_{i + 1:04d}",
+                success=True,
+                summary_metrics={
+                    "request_throughput": JsonMetricResult(
+                        unit="requests/sec",
+                        avg=100.0 + i,
+                        std=5.0,
+                        min=95.0,
+                        max=105.0,
+                    ),
+                },
+                metadata={"trial_index": i},
+            )
+            results.append(result)
+        return results
+
+    @pytest.fixture
+    def mock_results_sweep_only(self) -> list[RunResult]:
+        """Create mock results for sweep-only mode (no confidence trials)."""
+        results = []
+        for concurrency in [10, 20, 30]:
+            result = RunResult(
+                label=f"concurrency_{concurrency}",
                 success=True,
                 summary_metrics={
                     "request_throughput": JsonMetricResult(
                         unit="requests/sec",
                         avg=100.0 + concurrency,
                         std=5.0,
-                        min=95.0 + concurrency,
-                        max=105.0 + concurrency,
-                    ),
-                    "ttft": JsonMetricResult(
-                        unit="ms",
-                        avg=50.0 + concurrency,
-                        p99=100.0 + concurrency,
                     ),
                 },
-                metadata={
-                    "trial_index": 0,
-                    "value_index": value_index,
-                    "concurrency": concurrency,
-                    "sweep_mode": "repeated",
-                },
+                metadata={"concurrency": concurrency},
             )
             results.append(result)
-
-        # Trial 2
-        for value_index, concurrency in enumerate([10, 20, 30]):
-            result = RunResult(
-                label=f"trial_0002_concurrency_{concurrency}",
-                success=True,
-                summary_metrics={
-                    "request_throughput": JsonMetricResult(
-                        unit="requests/sec",
-                        avg=102.0 + concurrency,
-                        std=5.0,
-                        min=97.0 + concurrency,
-                        max=107.0 + concurrency,
-                    ),
-                    "ttft": JsonMetricResult(
-                        unit="ms",
-                        avg=52.0 + concurrency,
-                        p99=102.0 + concurrency,
-                    ),
-                },
-                metadata={
-                    "trial_index": 1,
-                    "value_index": value_index,
-                    "concurrency": concurrency,
-                    "sweep_mode": "repeated",
-                },
-            )
-            results.append(result)
-
         return results
 
     @pytest.fixture
-    def mock_results_independent_mode(self) -> list[RunResult]:
-        """Create mock results for independent mode sweep + confidence.
-
-        Structure: 3 concurrency values × 2 trials = 6 runs
-        Concurrency 10: [trial1, trial2]
-        Concurrency 20: [trial1, trial2]
-        Concurrency 30: [trial1, trial2]
-        """
+    def mock_results_sweep_and_confidence(self) -> list[RunResult]:
+        """Create mock results for sweep + confidence mode."""
         results = []
-
         for concurrency in [10, 20, 30]:
-            for trial_index in range(2):
+            for trial in range(2):
                 result = RunResult(
-                    label=f"concurrency_{concurrency}_trial_{trial_index + 1:04d}",
+                    label=f"concurrency_{concurrency}_trial_{trial + 1:04d}",
                     success=True,
                     summary_metrics={
                         "request_throughput": JsonMetricResult(
                             unit="requests/sec",
-                            avg=100.0 + concurrency + trial_index,
+                            avg=100.0 + concurrency + trial,
                             std=5.0,
-                            min=95.0 + concurrency,
-                            max=105.0 + concurrency,
-                        ),
-                        "ttft": JsonMetricResult(
-                            unit="ms",
-                            avg=50.0 + concurrency + trial_index,
-                            p99=100.0 + concurrency,
                         ),
                     },
                     metadata={
-                        "trial_index": trial_index,
-                        "value_index": [10, 20, 30].index(concurrency),
                         "concurrency": concurrency,
-                        "sweep_mode": "independent",
+                        "trial_index": trial,
+                        "sweep_mode": "repeated",
                     },
                 )
                 results.append(result)
-
         return results
 
-    def test_groups_results_by_concurrency_value(
-        self, mock_results_repeated_mode: list[RunResult], tmp_path: Path
+    def test_aggregate_results_confidence_only(
+        self,
+        orchestrator: MultiRunOrchestrator,
+        mock_config: UserConfig,
+        mock_results_confidence_only: list[RunResult],
     ):
-        """Test that results are correctly grouped by concurrency value."""
-        with patch(
-            "aiperf.orchestrator.aggregation.confidence.ConfidenceAggregation"
-        ) as mock_agg_class:
-            mock_agg = Mock()
-            mock_agg_class.return_value = mock_agg
+        """Test aggregation for confidence-only mode."""
+        aggregates = orchestrator.aggregate_results(
+            mock_results_confidence_only, mock_config
+        )
 
-            # Mock aggregate to return a simple result
-            mock_agg.aggregate.return_value = Mock(
-                metadata={},
-                metrics={},
+        assert "aggregate" in aggregates
+        assert aggregates["aggregate"].aggregation_type == "confidence"
+        assert aggregates["aggregate"].num_runs == 3
+        assert aggregates["aggregate"].num_successful_runs == 3
+
+    def test_aggregate_results_sweep_only(
+        self,
+        orchestrator: MultiRunOrchestrator,
+        mock_config: UserConfig,
+        mock_results_sweep_only: list[RunResult],
+    ):
+        """Test aggregation for sweep-only mode (should return empty dict)."""
+        aggregates = orchestrator.aggregate_results(
+            mock_results_sweep_only, mock_config
+        )
+
+        # Sweep-only mode doesn't need aggregation
+        assert aggregates == {}
+
+    def test_aggregate_results_sweep_and_confidence(
+        self,
+        orchestrator: MultiRunOrchestrator,
+        mock_config: UserConfig,
+        mock_results_sweep_and_confidence: list[RunResult],
+    ):
+        """Test aggregation for sweep + confidence mode."""
+        aggregates = orchestrator.aggregate_results(
+            mock_results_sweep_and_confidence, mock_config
+        )
+
+        assert "per_value_aggregates" in aggregates
+        assert "sweep_aggregate" in aggregates
+
+        # Should have 3 per-value aggregates (one for each concurrency)
+        assert len(aggregates["per_value_aggregates"]) == 3
+        assert 10 in aggregates["per_value_aggregates"]
+        assert 20 in aggregates["per_value_aggregates"]
+        assert 30 in aggregates["per_value_aggregates"]
+
+        # Sweep aggregate should exist
+        assert aggregates["sweep_aggregate"].aggregation_type == "sweep"
+
+    def test_has_sweep_metadata(
+        self,
+        orchestrator: MultiRunOrchestrator,
+        mock_results_sweep_only: list[RunResult],
+        mock_results_confidence_only: list[RunResult],
+    ):
+        """Test detection of sweep metadata."""
+        assert orchestrator._has_sweep_metadata(mock_results_sweep_only) is True
+        assert orchestrator._has_sweep_metadata(mock_results_confidence_only) is False
+
+    def test_has_multiple_trials_per_value(
+        self,
+        orchestrator: MultiRunOrchestrator,
+        mock_results_sweep_and_confidence: list[RunResult],
+        mock_results_sweep_only: list[RunResult],
+    ):
+        """Test detection of multiple trials per value."""
+        assert (
+            orchestrator._has_multiple_trials_per_value(
+                mock_results_sweep_and_confidence
             )
+            is True
+        )
+        assert (
+            orchestrator._has_multiple_trials_per_value(mock_results_sweep_only)
+            is False
+        )
 
-            with patch("asyncio.run") as mock_run:
-                # Mock asyncio.run to return tuple of paths
-                mock_run.return_value = (tmp_path / "test.json", tmp_path / "test.csv")
-
-                _aggregate_per_sweep_value(
-                    mock_results_repeated_mode,
-                    confidence_level=0.95,
-                    base_dir=tmp_path,
-                    sweep_mode="repeated",
-                )
-
-            # Should call aggregate 3 times (once per concurrency value)
-            assert mock_agg.aggregate.call_count == 3
-
-            # Verify each call has 2 results (2 trials per value)
-            for call in mock_agg.aggregate.call_args_list:
-                results = call[0][0]
-                assert len(results) == 2
-
-    def test_writes_to_correct_directory_repeated_mode(
-        self, mock_results_repeated_mode: list[RunResult], tmp_path: Path
+    def test_aggregate_per_sweep_value(
+        self,
+        orchestrator: MultiRunOrchestrator,
+        mock_results_sweep_and_confidence: list[RunResult],
     ):
-        """Test that aggregate files are written to correct directories in repeated mode."""
-        with patch(
-            "aiperf.orchestrator.aggregation.confidence.ConfidenceAggregation"
-        ) as mock_agg_class:
-            mock_agg = Mock()
-            mock_agg_class.return_value = mock_agg
-            mock_agg.aggregate.return_value = Mock(metadata={}, metrics={})
+        """Test per-value aggregation."""
+        per_value_aggregates = orchestrator._aggregate_per_sweep_value(
+            mock_results_sweep_and_confidence, confidence_level=0.95
+        )
 
-            with (
-                patch(
-                    "aiperf.exporters.aggregate.AggregateConfidenceJsonExporter"
-                ) as mock_json,
-                patch(
-                    "aiperf.exporters.aggregate.AggregateConfidenceCsvExporter"
-                ) as mock_csv,
-            ):
-                # Mock exporters
-                mock_json_instance = Mock()
-                mock_json_instance.export = AsyncMock(
-                    return_value=tmp_path / "test.json"
-                )
-                mock_json.return_value = mock_json_instance
+        # Should have 3 aggregates
+        assert len(per_value_aggregates) == 3
 
-                mock_csv_instance = Mock()
-                mock_csv_instance.export = AsyncMock(return_value=tmp_path / "test.csv")
-                mock_csv.return_value = mock_csv_instance
+        # Each should have correct metadata
+        for concurrency, aggregate in per_value_aggregates.items():
+            assert aggregate.metadata["concurrency"] == concurrency
+            assert aggregate.metadata["sweep_mode"] == "repeated"
+            assert aggregate.aggregation_type == "confidence"
 
-                _aggregate_per_sweep_value(
-                    mock_results_repeated_mode,
-                    confidence_level=0.95,
-                    base_dir=tmp_path,
-                    sweep_mode="repeated",
-                )
-
-            # Verify directories: base_dir/aggregate/concurrency_XX/
-            expected_dirs = [
-                tmp_path / "aggregate" / "concurrency_10",
-                tmp_path / "aggregate" / "concurrency_20",
-                tmp_path / "aggregate" / "concurrency_30",
-            ]
-
-            for expected_dir in expected_dirs:
-                assert expected_dir.exists()
-
-    def test_writes_to_correct_directory_independent_mode(
-        self, mock_results_independent_mode: list[RunResult], tmp_path: Path
-    ):
-        """Test that aggregate files are written to correct directories in independent mode."""
-        with patch(
-            "aiperf.orchestrator.aggregation.confidence.ConfidenceAggregation"
-        ) as mock_agg_class:
-            mock_agg = Mock()
-            mock_agg_class.return_value = mock_agg
-            mock_agg.aggregate.return_value = Mock(metadata={}, metrics={})
-
-            with (
-                patch(
-                    "aiperf.exporters.aggregate.AggregateConfidenceJsonExporter"
-                ) as mock_json,
-                patch(
-                    "aiperf.exporters.aggregate.AggregateConfidenceCsvExporter"
-                ) as mock_csv,
-            ):
-                # Mock exporters
-                mock_json_instance = Mock()
-                mock_json_instance.export = AsyncMock(
-                    return_value=tmp_path / "test.json"
-                )
-                mock_json.return_value = mock_json_instance
-
-                mock_csv_instance = Mock()
-                mock_csv_instance.export = AsyncMock(return_value=tmp_path / "test.csv")
-                mock_csv.return_value = mock_csv_instance
-
-                _aggregate_per_sweep_value(
-                    mock_results_independent_mode,
-                    confidence_level=0.95,
-                    base_dir=tmp_path,
-                    sweep_mode="independent",
-                )
-
-            # Verify directories: base_dir/concurrency_XX/aggregate/
-            expected_dirs = [
-                tmp_path / "concurrency_10" / "aggregate",
-                tmp_path / "concurrency_20" / "aggregate",
-                tmp_path / "concurrency_30" / "aggregate",
-            ]
-
-            for expected_dir in expected_dirs:
-                assert expected_dir.exists()
-
-    def test_skips_values_with_insufficient_successful_runs(
-        self, mock_results_repeated_mode: list[RunResult], tmp_path: Path
+    def test_aggregate_per_sweep_value_skips_insufficient_runs(
+        self,
+        orchestrator: MultiRunOrchestrator,
+        mock_results_sweep_and_confidence: list[RunResult],
     ):
         """Test that values with < 2 successful runs are skipped."""
         # Mark one run as failed for concurrency=20
-        for result in mock_results_repeated_mode:
+        for result in mock_results_sweep_and_confidence:
             if (
                 result.metadata["concurrency"] == 20
                 and result.metadata["trial_index"] == 1
@@ -267,127 +215,35 @@ class TestAggregatePerSweepValue:
                 result.success = False
                 result.error = "Test failure"
 
-        with patch(
-            "aiperf.orchestrator.aggregation.confidence.ConfidenceAggregation"
-        ) as mock_agg_class:
-            mock_agg = Mock()
-            mock_agg_class.return_value = mock_agg
-            mock_agg.aggregate.return_value = Mock(metadata={}, metrics={})
+        per_value_aggregates = orchestrator._aggregate_per_sweep_value(
+            mock_results_sweep_and_confidence, confidence_level=0.95
+        )
 
-            with patch("asyncio.run") as mock_run:
-                # Mock asyncio.run to return tuple of paths
-                mock_run.return_value = (tmp_path / "test.json", tmp_path / "test.csv")
+        # Should only have 2 aggregates (10 and 30, not 20)
+        assert len(per_value_aggregates) == 2
+        assert 10 in per_value_aggregates
+        assert 30 in per_value_aggregates
+        assert 20 not in per_value_aggregates
 
-                _aggregate_per_sweep_value(
-                    mock_results_repeated_mode,
-                    confidence_level=0.95,
-                    base_dir=tmp_path,
-                    sweep_mode="repeated",
-                )
-
-            # Should only call aggregate 2 times (concurrency 10 and 30)
-            # Concurrency 20 has only 1 successful run
-            assert mock_agg.aggregate.call_count == 2
-
-    def test_adds_sweep_metadata_to_aggregate_result(
-        self, mock_results_repeated_mode: list[RunResult], tmp_path: Path
+    def test_compute_sweep_aggregates(
+        self,
+        orchestrator: MultiRunOrchestrator,
+        mock_results_sweep_and_confidence: list[RunResult],
     ):
-        """Test that sweep-specific metadata is added to aggregate results."""
-        with patch(
-            "aiperf.orchestrator.aggregation.confidence.ConfidenceAggregation"
-        ) as mock_agg_class:
-            mock_agg = Mock()
-            mock_agg_class.return_value = mock_agg
+        """Test sweep-level aggregation."""
+        # First compute per-value aggregates
+        per_value_aggregates = orchestrator._aggregate_per_sweep_value(
+            mock_results_sweep_and_confidence, confidence_level=0.95
+        )
 
-            # Create a mock aggregate result that we can inspect
-            mock_aggregate_result = Mock(metadata={}, metrics={})
-            mock_agg.aggregate.return_value = mock_aggregate_result
+        # Then compute sweep aggregates
+        sweep_aggregate = orchestrator._compute_sweep_aggregates(
+            mock_results_sweep_and_confidence,
+            per_value_aggregates,
+            confidence_level=0.95,
+        )
 
-            with patch("asyncio.run") as mock_run:
-                # Mock asyncio.run to return tuple of paths
-                mock_run.return_value = (tmp_path / "test.json", tmp_path / "test.csv")
-
-                _aggregate_per_sweep_value(
-                    mock_results_repeated_mode,
-                    confidence_level=0.95,
-                    base_dir=tmp_path,
-                    sweep_mode="repeated",
-                )
-
-            # Verify metadata was added for each concurrency value
-            # Check that concurrency and sweep_mode were set
-            assert mock_aggregate_result.metadata["sweep_mode"] == "repeated"
-            # The last call should have concurrency=30
-            assert mock_aggregate_result.metadata["concurrency"] == 30
-
-    def test_handles_empty_results_gracefully(self, tmp_path: Path):
-        """Test that function handles empty results list gracefully."""
-        with patch(
-            "aiperf.orchestrator.aggregation.confidence.ConfidenceAggregation"
-        ) as mock_agg_class:
-            mock_agg = Mock()
-            mock_agg_class.return_value = mock_agg
-
-            # Should not raise an error
-            _aggregate_per_sweep_value(
-                [],
-                confidence_level=0.95,
-                base_dir=tmp_path,
-                sweep_mode="repeated",
-            )
-
-            # Should not call aggregate
-            mock_agg.aggregate.assert_not_called()
-
-    def test_handles_results_without_concurrency_metadata(self, tmp_path: Path):
-        """Test that function handles results without concurrency metadata gracefully."""
-        results = [
-            RunResult(
-                label="test_run",
-                success=True,
-                summary_metrics={},
-                metadata={},  # No concurrency metadata
-            )
-        ]
-
-        with patch(
-            "aiperf.orchestrator.aggregation.confidence.ConfidenceAggregation"
-        ) as mock_agg_class:
-            mock_agg = Mock()
-            mock_agg_class.return_value = mock_agg
-
-            # Should not raise an error
-            _aggregate_per_sweep_value(
-                results,
-                confidence_level=0.95,
-                base_dir=tmp_path,
-                sweep_mode="repeated",
-            )
-
-            # Should not call aggregate
-            mock_agg.aggregate.assert_not_called()
-
-    def test_uses_correct_confidence_level(
-        self, mock_results_repeated_mode: list[RunResult], tmp_path: Path
-    ):
-        """Test that the correct confidence level is passed to ConfidenceAggregation."""
-        with patch(
-            "aiperf.orchestrator.aggregation.confidence.ConfidenceAggregation"
-        ) as mock_agg_class:
-            mock_agg = Mock()
-            mock_agg_class.return_value = mock_agg
-            mock_agg.aggregate.return_value = Mock(metadata={}, metrics={})
-
-            with patch("asyncio.run") as mock_run:
-                # Mock asyncio.run to return tuple of paths
-                mock_run.return_value = (tmp_path / "test.json", tmp_path / "test.csv")
-
-                _aggregate_per_sweep_value(
-                    mock_results_repeated_mode,
-                    confidence_level=0.99,
-                    base_dir=tmp_path,
-                    sweep_mode="repeated",
-                )
-
-            # Verify ConfidenceAggregation was created with correct confidence level
-            mock_agg_class.assert_called_once_with(confidence_level=0.99)
+        assert sweep_aggregate is not None
+        assert sweep_aggregate.aggregation_type == "sweep"
+        assert "best_configurations" in sweep_aggregate.metadata
+        assert "pareto_optimal" in sweep_aggregate.metadata

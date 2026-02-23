@@ -745,3 +745,309 @@ class MultiRunOrchestrator:
                     )
 
         return failed_values
+
+    def aggregate_results(
+        self, results: list[RunResult], config: UserConfig
+    ) -> dict[str, Any]:
+        """Aggregate results based on execution mode.
+
+        Determines aggregation strategy based on results metadata:
+        - Sweep-only: No aggregation (returns empty dict)
+        - Confidence-only: Single aggregate using ConfidenceAggregation
+        - Sweep + confidence: Per-value aggregates + sweep-level aggregates
+
+        Args:
+            results: List of run results from execute()
+            config: User configuration used for execution
+
+        Returns:
+            Dict with aggregation results:
+            - For confidence-only: {"aggregate": AggregateResult}
+            - For sweep+confidence: {
+                "per_value_aggregates": {value: AggregateResult},
+                "sweep_aggregate": AggregateResult
+              }
+            - For sweep-only: {} (empty dict, no aggregation needed)
+        """
+        from aiperf.orchestrator.aggregation.confidence import ConfidenceAggregation
+
+        # Detect mode from results metadata
+        has_sweep_metadata = self._has_sweep_metadata(results)
+        has_multiple_trials = self._has_multiple_trials_per_value(results)
+
+        # Sweep-only mode: no aggregation needed
+        if has_sweep_metadata and not has_multiple_trials:
+            logger.info("Sweep-only mode: no aggregation needed")
+            return {}
+
+        # Confidence-only mode: single aggregate
+        if not has_sweep_metadata and has_multiple_trials:
+            logger.info("Computing confidence aggregate...")
+            aggregation = ConfidenceAggregation(
+                confidence_level=config.loadgen.confidence_level
+            )
+            aggregate_result = aggregation.aggregate(results)
+            aggregate_result.metadata["cooldown_seconds"] = (
+                config.loadgen.profile_run_cooldown_seconds
+            )
+            return {"aggregate": aggregate_result}
+
+        # Sweep + confidence mode: per-value and sweep-level aggregates
+        if has_sweep_metadata and has_multiple_trials:
+            logger.info("Computing per-value and sweep-level aggregates...")
+            per_value_aggregates = self._aggregate_per_sweep_value(
+                results, config.loadgen.confidence_level
+            )
+            sweep_aggregate = self._compute_sweep_aggregates(
+                results, per_value_aggregates, config.loadgen.confidence_level
+            )
+            return {
+                "per_value_aggregates": per_value_aggregates,
+                "sweep_aggregate": sweep_aggregate,
+            }
+
+        # Single run or insufficient data
+        logger.warning("No aggregation performed: insufficient data or single run")
+        return {}
+
+    def _has_sweep_metadata(self, results: list[RunResult]) -> bool:
+        """Check if results contain sweep parameter metadata.
+
+        Args:
+            results: List of run results
+
+        Returns:
+            True if multiple distinct parameter values found
+        """
+        sweep_param_values = set()
+        for r in results:
+            for key in ["concurrency", "request_rate"]:
+                if key in r.metadata:
+                    sweep_param_values.add(r.metadata[key])
+                    break
+        return len(sweep_param_values) > 1
+
+    def _has_multiple_trials_per_value(self, results: list[RunResult]) -> bool:
+        """Check if results contain multiple trials per parameter value.
+
+        For confidence-only mode (no sweep), checks if there are multiple results total.
+        For sweep mode, checks if any parameter value has multiple trials.
+
+        Args:
+            results: List of run results
+
+        Returns:
+            True if multiple trials detected
+        """
+        from collections import defaultdict
+
+        results_by_value: dict[int, list[RunResult]] = defaultdict(list)
+        has_sweep_param = False
+
+        for result in results:
+            for key in ["concurrency", "request_rate"]:
+                if key in result.metadata:
+                    has_sweep_param = True
+                    param_value = result.metadata[key]
+                    results_by_value[param_value].append(result)
+                    break
+
+        # If no sweep parameters found, this is confidence-only mode
+        # Check if we have multiple results total
+        if not has_sweep_param:
+            return len(results) > 1
+
+        # For sweep mode, check if any value has multiple results
+        return any(len(trials) > 1 for trials in results_by_value.values())
+
+    def _aggregate_per_sweep_value(
+        self, results: list[RunResult], confidence_level: float
+    ) -> dict[int, Any]:
+        """Aggregate results per sweep value for sweep + confidence mode.
+
+        Groups results by parameter value and applies ConfidenceAggregation
+        to each group.
+
+        Args:
+            results: List of all run results
+            confidence_level: Confidence level for intervals
+
+        Returns:
+            Dict mapping parameter value to AggregateResult
+        """
+        from collections import defaultdict
+
+        from aiperf.orchestrator.aggregation.confidence import ConfidenceAggregation
+
+        # Group results by parameter value
+        results_by_value: dict[int, list[RunResult]] = defaultdict(list)
+        param_name = None
+
+        for result in results:
+            for key in ["concurrency", "request_rate"]:
+                if key in result.metadata:
+                    param_name = key
+                    param_value = result.metadata[key]
+                    results_by_value[param_value].append(result)
+                    break
+
+        if not results_by_value:
+            logger.warning("No sweep results found with parameter metadata")
+            return {}
+
+        logger.info(
+            f"Computing per-value aggregates for {len(results_by_value)} {param_name} values..."
+        )
+
+        # Aggregate each parameter value
+        aggregation = ConfidenceAggregation(confidence_level=confidence_level)
+        per_value_aggregates = {}
+
+        for param_value in sorted(results_by_value.keys()):
+            value_results = results_by_value[param_value]
+
+            # Check if we have enough successful runs
+            successful = [r for r in value_results if r.success]
+            if len(successful) < 2:
+                logger.warning(
+                    f"Skipping aggregate for {param_name}={param_value}: "
+                    f"only {len(successful)} successful run(s), need at least 2"
+                )
+                continue
+
+            logger.info(
+                f"  Aggregating {param_name}={param_value} "
+                f"({len(successful)}/{len(value_results)} successful)"
+            )
+
+            # Compute aggregate statistics
+            aggregate_result = aggregation.aggregate(value_results)
+
+            # Add sweep-specific metadata
+            aggregate_result.metadata[param_name] = param_value
+            aggregate_result.metadata["sweep_mode"] = value_results[0].metadata.get(
+                "sweep_mode", "repeated"
+            )
+
+            per_value_aggregates[param_value] = aggregate_result
+
+        return per_value_aggregates
+
+    def _compute_sweep_aggregates(
+        self,
+        results: list[RunResult],
+        per_value_aggregates: dict[int, Any],
+        confidence_level: float,
+    ) -> Any:
+        """Compute sweep-level aggregates (Pareto optimal, best configs).
+
+        Args:
+            results: List of all run results
+            per_value_aggregates: Per-value aggregate results
+            confidence_level: Confidence level for intervals
+
+        Returns:
+            AggregateResult with sweep-level statistics
+        """
+        from aiperf.orchestrator.aggregation.base import AggregateResult
+        from aiperf.orchestrator.aggregation.sweep import (
+            ParameterCombination,
+            SweepAggregation,
+        )
+
+        logger.info("Computing sweep-level aggregates...")
+
+        # Detect parameter name from results
+        param_name = None
+        for result in results:
+            for key in ["concurrency", "request_rate"]:
+                if key in result.metadata:
+                    param_name = key
+                    break
+            if param_name:
+                break
+
+        if not param_name:
+            logger.warning("Could not determine sweep parameter name")
+            return None
+
+        # Convert per-value aggregates to coordinate-based format
+        # Need to convert ConfidenceMetric objects to dicts for SweepAggregation
+        per_combination_stats = {}
+        for param_value, aggregate in per_value_aggregates.items():
+            coord = ParameterCombination({param_name: param_value})
+
+            # Convert metrics from ConfidenceMetric objects to dicts
+            metrics_dict = {}
+            for metric_name, metric_value in aggregate.metrics.items():
+                # ConfidenceMetric is a dataclass, use asdict
+                from dataclasses import asdict, is_dataclass
+
+                if is_dataclass(metric_value):
+                    metrics_dict[metric_name] = asdict(metric_value)
+                elif isinstance(metric_value, dict):
+                    metrics_dict[metric_name] = metric_value
+                else:
+                    # Fallback: try to convert to dict
+                    metrics_dict[metric_name] = (
+                        dict(metric_value)
+                        if hasattr(metric_value, "__iter__")
+                        else metric_value
+                    )
+
+            per_combination_stats[coord] = metrics_dict
+
+        sweep_parameters = [
+            {"name": param_name, "values": sorted(per_value_aggregates.keys())}
+        ]
+
+        # Compute sweep aggregation
+        sweep_dict = SweepAggregation.compute(per_combination_stats, sweep_parameters)
+
+        # Add metadata
+        sweep_mode = results[0].metadata.get("sweep_mode", "repeated")
+        sweep_dict["metadata"]["sweep_mode"] = sweep_mode
+        sweep_dict["metadata"]["confidence_level"] = confidence_level
+        sweep_dict["metadata"]["aggregation_type"] = "sweep"
+
+        # Determine number of trials per value
+        from collections import defaultdict
+
+        results_by_value: dict[int, list[RunResult]] = defaultdict(list)
+        for result in results:
+            if param_name in result.metadata:
+                param_value = result.metadata[param_name]
+                results_by_value[param_value].append(result)
+
+        if results_by_value:
+            first_value = sorted(results_by_value.keys())[0]
+            num_trials = len(results_by_value[first_value])
+            sweep_dict["metadata"]["num_trials_per_value"] = num_trials
+
+        # Count total and successful runs
+        total_runs = len(results)
+        successful_runs = len([r for r in results if r.success])
+        failed_run_details = [
+            {
+                "label": r.label,
+                "error": str(r.error) if hasattr(r, "error") else "Unknown error",
+            }
+            for r in results
+            if not r.success
+        ]
+
+        # Convert to AggregateResult
+        sweep_result = AggregateResult(
+            aggregation_type="sweep",
+            num_runs=total_runs,
+            num_successful_runs=successful_runs,
+            failed_runs=failed_run_details,
+            metadata=sweep_dict["metadata"],
+            metrics=sweep_dict["per_combination_metrics"],
+        )
+
+        # Store additional sweep-specific data in metadata
+        sweep_result.metadata["best_configurations"] = sweep_dict["best_configurations"]
+        sweep_result.metadata["pareto_optimal"] = sweep_dict["pareto_optimal"]
+
+        return sweep_result

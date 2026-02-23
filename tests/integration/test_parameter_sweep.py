@@ -2754,3 +2754,178 @@ class TestParameterSweep:
         # 3. No confidence aggregate files generated
         # 4. No sweep aggregate generated (current behavior for single runs)
         # 5. Each concurrency value has its own directory with artifacts
+
+    async def test_sweep_directory_structure_consumable_by_plot(
+        self,
+        cli: AIPerfCLI,
+        aiperf_mock_server: AIPerfMockServer,
+        temp_output_dir: Path,
+    ):
+        """Test that sweep directory structure is consumable by plot command.
+
+        This test validates:
+        - Sweep generates proper directory structure
+        - Plot command can consume sweep directories without errors
+        - Plot command recognizes sweep runs correctly
+
+        Note: Plot may not generate PNG files if data lacks required metrics
+        (e.g., GPU telemetry, streaming metrics), but it should run successfully.
+
+        Workflow:
+        1. Run parameter sweep (repeated mode)
+        2. Verify directory structure
+        3. Run aiperf plot on sweep output
+        4. Verify plot command succeeds and creates output directory
+        """
+        # Step 1: Run parameter sweep in repeated mode
+        profile_result = await cli.run(
+            f"""
+            aiperf profile \
+                --model {defaults.model} \
+                --url {aiperf_mock_server.url} \
+                --endpoint-type chat \
+                --concurrency 2,4,6 \
+                --num-profile-runs 2 \
+                --parameter-sweep-mode repeated \
+                --request-count 10 \
+                --workers-max {defaults.workers_max} \
+                --ui {defaults.ui}
+            """
+        )
+        assert profile_result.exit_code == 0, "Profile command should succeed"
+
+        # Step 2: Verify sweep directory structure exists
+        profile_runs_dir = temp_output_dir / "profile_runs"
+        assert profile_runs_dir.exists(), "profile_runs directory should exist"
+
+        # Verify trial directories
+        trial_dirs = sorted(profile_runs_dir.glob("trial_*"))
+        assert len(trial_dirs) == 2, "Should have 2 trial directories"
+
+        # Verify each trial has concurrency subdirectories with artifacts
+        for trial_dir in trial_dirs:
+            for concurrency in [2, 4, 6]:
+                concurrency_dir = trial_dir / f"concurrency_{concurrency}"
+                assert concurrency_dir.exists(), (
+                    f"{trial_dir.name}/concurrency_{concurrency} should exist"
+                )
+
+                # Verify artifacts exist
+                json_file = concurrency_dir / "profile_export_aiperf.json"
+                csv_file = concurrency_dir / "profile_export_aiperf.csv"
+                assert json_file.exists(), f"{concurrency_dir} should have JSON export"
+                assert csv_file.exists(), f"{concurrency_dir} should have CSV export"
+
+        # Step 3: Run aiperf plot on the sweep output directory
+        plot_result = await cli.run(
+            f"""
+            aiperf plot \
+                --paths {temp_output_dir}
+            """,
+            assert_success=True,
+        )
+        assert plot_result.exit_code == 0, (
+            "Plot command should succeed on sweep directory"
+        )
+
+        # Step 4: Verify plot directory was created and log exists
+        plot_dir = temp_output_dir / "plots"
+        assert plot_dir.exists(), f"Plot directory should be created at {plot_dir}"
+
+        plot_log = plot_dir / "aiperf_plot.log"
+        assert plot_log.exists(), "Plot log should be created"
+
+        # Verify plot log shows runs were detected
+        log_content = plot_log.read_text()
+        assert "Found 6 unique run directories" in log_content, (
+            "Plot should detect 6 run directories (2 trials × 3 concurrency values)"
+        )
+        assert "MULTI_RUN mode" in log_content, (
+            "Plot should detect multi-run mode for sweep"
+        )
+
+    async def test_sweep_aggregate_structure_validation(
+        self,
+        cli: AIPerfCLI,
+        aiperf_mock_server: AIPerfMockServer,
+        temp_output_dir: Path,
+    ):
+        """Test sweep aggregate structure with new multi-parameter format.
+
+        This test validates:
+        - Sweep aggregates use new coordinate-based format
+        - per_combination_metrics is properly structured
+        - best_configurations uses parameters dict
+        - Pareto optimal configurations are identified
+
+        Workflow:
+        1. Run parameter sweep
+        2. Verify sweep aggregate JSON structure
+        3. Validate new format fields
+        """
+        # Step 1: Run parameter sweep
+        profile_result = await cli.run(
+            f"""
+            aiperf profile \
+                --model {defaults.model} \
+                --url {aiperf_mock_server.url} \
+                --endpoint-type chat \
+                --concurrency 2,4,6 \
+                --num-profile-runs 2 \
+                --parameter-sweep-mode repeated \
+                --request-count 10 \
+                --workers-max {defaults.workers_max} \
+                --ui {defaults.ui}
+            """
+        )
+        assert profile_result.exit_code == 0, "Profile should succeed"
+
+        # Step 2: Load sweep aggregate JSON
+        sweep_agg_dir = temp_output_dir / "aggregate" / "sweep_aggregate"
+        sweep_json = sweep_agg_dir / "profile_export_aiperf_sweep.json"
+        assert sweep_json.exists(), "Sweep JSON should exist"
+
+        import json
+
+        with open(sweep_json) as f:
+            sweep_data = json.load(f)
+
+        # Step 3: Validate new format structure
+        # Verify top-level keys
+        assert "metadata" in sweep_data
+        assert "per_combination_metrics" in sweep_data
+        assert "best_configurations" in sweep_data
+        assert "pareto_optimal" in sweep_data
+
+        # Verify metadata has sweep_parameters (not parameter_name/values)
+        metadata = sweep_data["metadata"]
+        assert "sweep_parameters" in metadata
+        assert isinstance(metadata["sweep_parameters"], list)
+        assert len(metadata["sweep_parameters"]) > 0
+
+        # Verify per_combination_metrics structure
+        per_combo = sweep_data["per_combination_metrics"]
+        assert isinstance(per_combo, list)
+        assert len(per_combo) == 3  # 3 concurrency values
+
+        for combo in per_combo:
+            assert "parameters" in combo
+            assert "metrics" in combo
+            assert isinstance(combo["parameters"], dict)
+            assert "concurrency" in combo["parameters"]
+
+        # Verify best_configurations uses parameters dict
+        best_configs = sweep_data["best_configurations"]
+        if "best_throughput" in best_configs:
+            best_throughput = best_configs["best_throughput"]
+            assert "parameters" in best_throughput
+            assert isinstance(best_throughput["parameters"], dict)
+            assert "metric" in best_throughput
+            assert "unit" in best_throughput
+
+        # Verify pareto_optimal is a list of parameter dicts
+        pareto = sweep_data["pareto_optimal"]
+        assert isinstance(pareto, list)
+        for config in pareto:
+            assert isinstance(config, dict)
+            assert "concurrency" in config

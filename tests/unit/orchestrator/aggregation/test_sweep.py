@@ -8,6 +8,7 @@ from aiperf.orchestrator.aggregation import (
     DEFAULT_PARETO_OBJECTIVES,
     Objective,
     OptimizationDirection,
+    ParameterCombination,
 )
 
 
@@ -121,6 +122,59 @@ class TestDefaultParetoObjectives:
             obj.metric_key = "new_metric"
 
 
+class TestParameterCombination:
+    """Tests for ParameterCombination named tuple."""
+
+    def test_create_single_parameter(self):
+        """Test creating a ParameterCombination with single parameter."""
+        combo = ParameterCombination({"concurrency": 10})
+        assert combo.parameters == {"concurrency": 10}
+
+    def test_create_multiple_parameters(self):
+        """Test creating a ParameterCombination with multiple parameters."""
+        combo = ParameterCombination({"concurrency": 10, "request_rate": 20})
+        assert combo.parameters == {"concurrency": 10, "request_rate": 20}
+
+    def test_to_dict(self):
+        """Test to_dict() method."""
+        combo = ParameterCombination({"concurrency": 10, "request_rate": 20})
+        result = combo.to_dict()
+        assert result == {"concurrency": 10, "request_rate": 20}
+        # Verify it's a copy
+        result["concurrency"] = 999
+        assert combo.parameters["concurrency"] == 10
+
+    def test_str_representation(self):
+        """Test string representation."""
+        combo = ParameterCombination({"concurrency": 10, "request_rate": 20})
+        result = str(combo)
+        # Should be sorted by key
+        assert result == "concurrency=10, request_rate=20"
+
+    def test_hashable(self):
+        """Test that ParameterCombination is hashable."""
+        combo1 = ParameterCombination({"concurrency": 10})
+        combo2 = ParameterCombination({"concurrency": 10})
+        combo3 = ParameterCombination({"concurrency": 20})
+
+        # Can be used in sets
+        combo_set = {combo1, combo2, combo3}
+        assert len(combo_set) == 2  # combo1 and combo2 are equal
+
+        # Can be used as dict keys
+        combo_dict = {combo1: "value1", combo3: "value3"}
+        assert len(combo_dict) == 2
+
+    def test_equality(self):
+        """Test equality comparison."""
+        combo1 = ParameterCombination({"concurrency": 10, "request_rate": 20})
+        combo2 = ParameterCombination({"concurrency": 10, "request_rate": 20})
+        combo3 = ParameterCombination({"concurrency": 20, "request_rate": 20})
+
+        assert combo1 == combo2
+        assert combo1 != combo3
+
+
 class TestIdentifyParetoOptimal:
     """Tests for identify_pareto_optimal() function."""
 
@@ -128,15 +182,16 @@ class TestIdentifyParetoOptimal:
         """Test that a single configuration is always Pareto optimal."""
         from aiperf.orchestrator.aggregation import identify_pareto_optimal
 
-        per_value_stats = {
-            10: {
+        combo = ParameterCombination({"concurrency": 10})
+        per_combination_stats = {
+            combo: {
                 "request_throughput_avg": {"mean": 100.0},
                 "ttft_p99_ms": {"mean": 50.0},
             }
         }
 
-        result = identify_pareto_optimal(per_value_stats)
-        assert result == [10]
+        result = identify_pareto_optimal(per_combination_stats)
+        assert result == [combo]
 
     def test_all_configurations_pareto_optimal_when_none_dominates(self):
         """Test that all configurations are Pareto optimal when none dominates another."""
@@ -145,19 +200,21 @@ class TestIdentifyParetoOptimal:
         # Config 1: high throughput, high latency
         # Config 2: low throughput, low latency
         # Neither dominates the other
-        per_value_stats = {
-            10: {
+        combo1 = ParameterCombination({"concurrency": 10})
+        combo2 = ParameterCombination({"concurrency": 20})
+        per_combination_stats = {
+            combo1: {
                 "request_throughput_avg": {"mean": 100.0},
                 "ttft_p99_ms": {"mean": 100.0},
             },
-            20: {
+            combo2: {
                 "request_throughput_avg": {"mean": 50.0},
                 "ttft_p99_ms": {"mean": 50.0},
             },
         }
 
-        result = identify_pareto_optimal(per_value_stats)
-        assert sorted(result) == [10, 20]
+        result = identify_pareto_optimal(per_combination_stats)
+        assert set(result) == {combo1, combo2}
 
     def test_dominated_configuration_excluded(self):
         """Test that a dominated configuration is excluded from Pareto optimal set."""
@@ -166,23 +223,26 @@ class TestIdentifyParetoOptimal:
         # Config 1: 100 throughput, 50ms latency
         # Config 2: 150 throughput, 40ms latency (dominates config 1)
         # Config 3: 80 throughput, 60ms latency (dominated by config 1)
-        per_value_stats = {
-            10: {
+        combo1 = ParameterCombination({"concurrency": 10})
+        combo2 = ParameterCombination({"concurrency": 20})
+        combo3 = ParameterCombination({"concurrency": 30})
+        per_combination_stats = {
+            combo1: {
                 "request_throughput_avg": {"mean": 100.0},
                 "ttft_p99_ms": {"mean": 50.0},
             },
-            20: {
+            combo2: {
                 "request_throughput_avg": {"mean": 150.0},
                 "ttft_p99_ms": {"mean": 40.0},
             },
-            30: {
+            combo3: {
                 "request_throughput_avg": {"mean": 80.0},
                 "ttft_p99_ms": {"mean": 60.0},
             },
         }
 
-        result = identify_pareto_optimal(per_value_stats)
-        assert result == [20]  # Only config 2 is Pareto optimal
+        result = identify_pareto_optimal(per_combination_stats)
+        assert result == [combo2]  # Only config 2 is Pareto optimal
 
     def test_pareto_frontier_with_tradeoffs(self):
         """Test Pareto frontier with multiple optimal points showing tradeoffs."""
@@ -190,38 +250,42 @@ class TestIdentifyParetoOptimal:
 
         # Classic Pareto frontier: as throughput increases, latency increases
         # All three are Pareto optimal (different tradeoff points)
-        per_value_stats = {
-            10: {
+        combo1 = ParameterCombination({"concurrency": 10})
+        combo2 = ParameterCombination({"concurrency": 20})
+        combo3 = ParameterCombination({"concurrency": 30})
+        per_combination_stats = {
+            combo1: {
                 "request_throughput_avg": {"mean": 50.0},
                 "ttft_p99_ms": {"mean": 30.0},
             },
-            20: {
+            combo2: {
                 "request_throughput_avg": {"mean": 100.0},
                 "ttft_p99_ms": {"mean": 50.0},
             },
-            30: {
+            combo3: {
                 "request_throughput_avg": {"mean": 150.0},
                 "ttft_p99_ms": {"mean": 80.0},
             },
         }
 
-        result = identify_pareto_optimal(per_value_stats)
-        assert sorted(result) == [10, 20, 30]
+        result = identify_pareto_optimal(per_combination_stats)
+        assert set(result) == {combo1, combo2, combo3}
 
     def test_uses_default_objectives_when_none_provided(self):
         """Test that function uses DEFAULT_PARETO_OBJECTIVES when objectives=None."""
         from aiperf.orchestrator.aggregation import identify_pareto_optimal
 
-        per_value_stats = {
-            10: {
+        combo = ParameterCombination({"concurrency": 10})
+        per_combination_stats = {
+            combo: {
                 "request_throughput_avg": {"mean": 100.0},
                 "ttft_p99_ms": {"mean": 50.0},
             }
         }
 
         # Should not raise error and should use default objectives
-        result = identify_pareto_optimal(per_value_stats, objectives=None)
-        assert result == [10]
+        result = identify_pareto_optimal(per_combination_stats, objectives=None)
+        assert result == [combo]
 
     def test_custom_objectives_single_maximize(self):
         """Test with custom objective that only maximizes one metric."""
@@ -231,14 +295,17 @@ class TestIdentifyParetoOptimal:
             Objective("request_throughput_avg", OptimizationDirection.MAXIMIZE)
         ]
 
-        per_value_stats = {
-            10: {"request_throughput_avg": {"mean": 100.0}},
-            20: {"request_throughput_avg": {"mean": 150.0}},
-            30: {"request_throughput_avg": {"mean": 120.0}},
+        combo1 = ParameterCombination({"concurrency": 10})
+        combo2 = ParameterCombination({"concurrency": 20})
+        combo3 = ParameterCombination({"concurrency": 30})
+        per_combination_stats = {
+            combo1: {"request_throughput_avg": {"mean": 100.0}},
+            combo2: {"request_throughput_avg": {"mean": 150.0}},
+            combo3: {"request_throughput_avg": {"mean": 120.0}},
         }
 
-        result = identify_pareto_optimal(per_value_stats, objectives)
-        assert result == [20]  # Highest throughput
+        result = identify_pareto_optimal(per_combination_stats, objectives)
+        assert result == [combo2]  # Highest throughput
 
     def test_custom_objectives_single_minimize(self):
         """Test with custom objective that only minimizes one metric."""
@@ -246,14 +313,17 @@ class TestIdentifyParetoOptimal:
 
         objectives = [Objective("ttft_p99_ms", OptimizationDirection.MINIMIZE)]
 
-        per_value_stats = {
-            10: {"ttft_p99_ms": {"mean": 50.0}},
-            20: {"ttft_p99_ms": {"mean": 30.0}},
-            30: {"ttft_p99_ms": {"mean": 40.0}},
+        combo1 = ParameterCombination({"concurrency": 10})
+        combo2 = ParameterCombination({"concurrency": 20})
+        combo3 = ParameterCombination({"concurrency": 30})
+        per_combination_stats = {
+            combo1: {"ttft_p99_ms": {"mean": 50.0}},
+            combo2: {"ttft_p99_ms": {"mean": 30.0}},
+            combo3: {"ttft_p99_ms": {"mean": 40.0}},
         }
 
-        result = identify_pareto_optimal(per_value_stats, objectives)
-        assert result == [20]  # Lowest latency
+        result = identify_pareto_optimal(per_combination_stats, objectives)
+        assert result == [combo2]  # Lowest latency
 
     def test_custom_objectives_three_dimensions(self):
         """Test with three objectives (N-dimensional Pareto analysis)."""
@@ -268,47 +338,52 @@ class TestIdentifyParetoOptimal:
         # Config 1: high throughput, high latency, low cost
         # Config 2: medium throughput, low latency, medium cost
         # Config 3: low throughput, medium latency, high cost (dominated)
-        per_value_stats = {
-            10: {
+        combo1 = ParameterCombination({"concurrency": 10})
+        combo2 = ParameterCombination({"concurrency": 20})
+        combo3 = ParameterCombination({"concurrency": 30})
+        per_combination_stats = {
+            combo1: {
                 "throughput": {"mean": 150.0},
                 "latency": {"mean": 80.0},
                 "cost": {"mean": 10.0},
             },
-            20: {
+            combo2: {
                 "throughput": {"mean": 100.0},
                 "latency": {"mean": 40.0},
                 "cost": {"mean": 20.0},
             },
-            30: {
+            combo3: {
                 "throughput": {"mean": 50.0},
                 "latency": {"mean": 60.0},
                 "cost": {"mean": 30.0},
             },
         }
 
-        result = identify_pareto_optimal(per_value_stats, objectives)
+        result = identify_pareto_optimal(per_combination_stats, objectives)
         # Config 3 is dominated by both 1 and 2
-        assert sorted(result) == [10, 20]
+        assert set(result) == {combo1, combo2}
 
     def test_equal_values_not_dominated(self):
         """Test that configurations with equal objective values are not dominated."""
         from aiperf.orchestrator.aggregation import identify_pareto_optimal
 
         # Config 1 and 2 have identical metrics
-        per_value_stats = {
-            10: {
+        combo1 = ParameterCombination({"concurrency": 10})
+        combo2 = ParameterCombination({"concurrency": 20})
+        per_combination_stats = {
+            combo1: {
                 "request_throughput_avg": {"mean": 100.0},
                 "ttft_p99_ms": {"mean": 50.0},
             },
-            20: {
+            combo2: {
                 "request_throughput_avg": {"mean": 100.0},
                 "ttft_p99_ms": {"mean": 50.0},
             },
         }
 
-        result = identify_pareto_optimal(per_value_stats)
+        result = identify_pareto_optimal(per_combination_stats)
         # Both should be Pareto optimal (neither strictly dominates)
-        assert sorted(result) == [10, 20]
+        assert set(result) == {combo1, combo2}
 
     def test_strictly_better_on_all_objectives_required(self):
         """Test that domination requires being better or equal on all, strictly better on at least one."""
@@ -316,45 +391,53 @@ class TestIdentifyParetoOptimal:
 
         # Config 2 is better on throughput and equal on latency
         # Config 2 DOES dominate config 1 (better or equal on all, strictly better on one)
-        per_value_stats = {
-            10: {
+        combo1 = ParameterCombination({"concurrency": 10})
+        combo2 = ParameterCombination({"concurrency": 20})
+        per_combination_stats = {
+            combo1: {
                 "request_throughput_avg": {"mean": 100.0},
                 "ttft_p99_ms": {"mean": 50.0},
             },
-            20: {
+            combo2: {
                 "request_throughput_avg": {"mean": 150.0},
                 "ttft_p99_ms": {"mean": 50.0},
             },
         }
 
-        result = identify_pareto_optimal(per_value_stats)
+        result = identify_pareto_optimal(per_combination_stats)
         # Only config 2 is Pareto optimal (dominates config 1)
-        assert result == [20]
+        assert result == [combo2]
 
     def test_result_is_sorted(self):
-        """Test that result is sorted by sweep value."""
+        """Test that result is sorted by parameter combination."""
         from aiperf.orchestrator.aggregation import identify_pareto_optimal
 
-        per_value_stats = {
-            30: {
+        combo1 = ParameterCombination({"concurrency": 30})
+        combo2 = ParameterCombination({"concurrency": 10})
+        combo3 = ParameterCombination({"concurrency": 20})
+        per_combination_stats = {
+            combo1: {
                 "request_throughput_avg": {"mean": 150.0},
                 "ttft_p99_ms": {"mean": 80.0},
             },
-            10: {
+            combo2: {
                 "request_throughput_avg": {"mean": 50.0},
                 "ttft_p99_ms": {"mean": 30.0},
             },
-            20: {
+            combo3: {
                 "request_throughput_avg": {"mean": 100.0},
                 "ttft_p99_ms": {"mean": 50.0},
             },
         }
 
-        result = identify_pareto_optimal(per_value_stats)
-        assert result == [10, 20, 30]  # Sorted order
+        result = identify_pareto_optimal(per_combination_stats)
+        # Should be sorted by parameters
+        assert result == sorted(
+            [combo1, combo2, combo3], key=lambda c: tuple(sorted(c.parameters.items()))
+        )
 
     def test_empty_stats_returns_empty_list(self):
-        """Test that empty per_value_stats returns empty list."""
+        """Test that empty per_combination_stats returns empty list."""
         from aiperf.orchestrator.aggregation import identify_pareto_optimal
 
         result = identify_pareto_optimal({})
@@ -364,103 +447,113 @@ class TestIdentifyParetoOptimal:
         """Test complex scenario with multiple dominated and non-dominated configs."""
         from aiperf.orchestrator.aggregation import identify_pareto_optimal
 
-        per_value_stats = {
-            10: {
+        combo1 = ParameterCombination({"concurrency": 10})
+        combo2 = ParameterCombination({"concurrency": 20})
+        combo3 = ParameterCombination({"concurrency": 30})
+        combo4 = ParameterCombination({"concurrency": 40})
+        combo5 = ParameterCombination({"concurrency": 50})
+        per_combination_stats = {
+            combo1: {
                 "request_throughput_avg": {"mean": 50.0},
                 "ttft_p99_ms": {"mean": 100.0},
-            },  # Dominated by 20, 30, 50
-            20: {
+            },  # Dominated by 2, 3, 5
+            combo2: {
                 "request_throughput_avg": {"mean": 100.0},
                 "ttft_p99_ms": {"mean": 80.0},
-            },  # Dominated by 30, 50
-            30: {
+            },  # Dominated by 3, 5
+            combo3: {
                 "request_throughput_avg": {"mean": 150.0},
                 "ttft_p99_ms": {"mean": 60.0},
-            },  # Dominated by 50
-            40: {
+            },  # Dominated by 5
+            combo4: {
                 "request_throughput_avg": {"mean": 120.0},
                 "ttft_p99_ms": {"mean": 70.0},
-            },  # Dominated by 30, 50
-            50: {
+            },  # Dominated by 3, 5
+            combo5: {
                 "request_throughput_avg": {"mean": 200.0},
                 "ttft_p99_ms": {"mean": 50.0},
             },  # Pareto optimal (best on both)
         }
 
-        result = identify_pareto_optimal(per_value_stats)
-        # Only 50 is Pareto optimal (dominates all others)
-        assert result == [50]
+        result = identify_pareto_optimal(per_combination_stats)
+        # Only combo5 is Pareto optimal (dominates all others)
+        assert result == [combo5]
 
     def test_true_pareto_frontier_with_multiple_optimal(self):
         """Test a true Pareto frontier where multiple configs are optimal."""
         from aiperf.orchestrator.aggregation import identify_pareto_optimal
 
         # Create a realistic Pareto frontier where there are tradeoffs
-        per_value_stats = {
-            10: {
+        combo1 = ParameterCombination({"concurrency": 10})
+        combo2 = ParameterCombination({"concurrency": 20})
+        combo3 = ParameterCombination({"concurrency": 30})
+        combo4 = ParameterCombination({"concurrency": 40})
+        combo5 = ParameterCombination({"concurrency": 50})
+        per_combination_stats = {
+            combo1: {
                 "request_throughput_avg": {"mean": 50.0},
                 "ttft_p99_ms": {"mean": 30.0},
             },  # Low throughput, low latency - Pareto optimal
-            20: {
+            combo2: {
                 "request_throughput_avg": {"mean": 80.0},
                 "ttft_p99_ms": {"mean": 45.0},
             },  # Medium throughput, medium latency - Pareto optimal
-            30: {
+            combo3: {
                 "request_throughput_avg": {"mean": 100.0},
                 "ttft_p99_ms": {"mean": 50.0},
             },  # Good throughput, medium latency - Pareto optimal
-            40: {
+            combo4: {
                 "request_throughput_avg": {"mean": 120.0},
                 "ttft_p99_ms": {"mean": 70.0},
             },  # Higher throughput, higher latency - Pareto optimal
-            50: {
+            combo5: {
                 "request_throughput_avg": {"mean": 110.0},
                 "ttft_p99_ms": {"mean": 80.0},
-            },  # Dominated by 40 (40 has higher throughput and lower latency)
+            },  # Dominated by 4 (4 has higher throughput and lower latency)
         }
 
-        result = identify_pareto_optimal(per_value_stats)
-        # Configs 10, 20, 30, 40 form the Pareto frontier
-        assert result == [10, 20, 30, 40]
+        result = identify_pareto_optimal(per_combination_stats)
+        # Configs 1, 2, 3, 4 form the Pareto frontier
+        assert set(result) == {combo1, combo2, combo3, combo4}
 
     def test_missing_metric_key_raises_error(self):
         """Test that missing metric key in objectives raises KeyError."""
-        from aiperf.orchestrator.aggregation import (
-            Objective,
-            OptimizationDirection,
-            identify_pareto_optimal,
-        )
+        from aiperf.orchestrator.aggregation import identify_pareto_optimal
 
-        per_value_stats = {
-            10: {"request_throughput_avg": {"mean": 100.0}},
-            20: {"request_throughput_avg": {"mean": 180.0}},
+        combo1 = ParameterCombination({"concurrency": 10})
+        combo2 = ParameterCombination({"concurrency": 20})
+        per_combination_stats = {
+            combo1: {"request_throughput_avg": {"mean": 100.0}},
+            combo2: {"request_throughput_avg": {"mean": 180.0}},
         }
 
         # Objective references metric that doesn't exist
         objectives = [Objective("nonexistent_metric", OptimizationDirection.MAXIMIZE)]
 
         with pytest.raises(KeyError):
-            identify_pareto_optimal(per_value_stats, objectives)
+            identify_pareto_optimal(per_combination_stats, objectives)
 
     def test_very_close_floating_point_values(self):
         """Test Pareto identification with very close floating point values."""
         from aiperf.orchestrator.aggregation import identify_pareto_optimal
 
         # Values differ by tiny amounts (floating point precision edge case)
-        per_value_stats = {
-            10: {
+        combo1 = ParameterCombination({"concurrency": 10})
+        combo2 = ParameterCombination({"concurrency": 20})
+        per_combination_stats = {
+            combo1: {
                 "request_throughput_avg": {"mean": 100.0000001},
                 "ttft_p99_ms": {"mean": 50.0},
             },
-            20: {
+            combo2: {
                 "request_throughput_avg": {"mean": 100.0000002},  # Slightly higher
                 "ttft_p99_ms": {"mean": 50.0},
             },
         }
 
-        result = identify_pareto_optimal(per_value_stats)
-        # Config 20 dominates 10 (strictly better throughput, equal latency)
-        assert result == [20]
+        result = identify_pareto_optimal(per_combination_stats)
+        # Config 2 dominates 1 (strictly better throughput, equal latency)
+        assert result == [combo2]
 
     def test_large_number_of_configurations(self):
         """Test Pareto identification with many configurations (performance test)."""
@@ -468,57 +561,61 @@ class TestIdentifyParetoOptimal:
 
         # Create 100 configurations where throughput increases and latency decreases
         # This means higher configs dominate lower ones
-        per_value_stats = {}
+        per_combination_stats = {}
+        combos = []
         for i in range(1, 101):
-            per_value_stats[i] = {
+            combo = ParameterCombination({"concurrency": i})
+            combos.append(combo)
+            per_combination_stats[combo] = {
                 "request_throughput_avg": {"mean": float(i * 10)},  # Increases
                 "ttft_p99_ms": {"mean": float(101 - i)},  # Decreases
             }
 
-        result = identify_pareto_optimal(per_value_stats)
+        result = identify_pareto_optimal(per_combination_stats)
 
         # Only the last config (100) is Pareto optimal - it dominates all others
         # (highest throughput AND lowest latency)
-        assert result == [100]
+        assert result == [combos[-1]]
 
     def test_all_dominated_by_one_configuration(self):
         """Test when one configuration dominates all others."""
         from aiperf.orchestrator.aggregation import identify_pareto_optimal
 
-        per_value_stats = {
-            10: {
+        combo1 = ParameterCombination({"concurrency": 10})
+        combo2 = ParameterCombination({"concurrency": 20})
+        combo3 = ParameterCombination({"concurrency": 30})
+        combo4 = ParameterCombination({"concurrency": 40})
+        combo5 = ParameterCombination({"concurrency": 50})
+        per_combination_stats = {
+            combo1: {
                 "request_throughput_avg": {"mean": 100.0},
                 "ttft_p99_ms": {"mean": 100.0},
             },
-            20: {
+            combo2: {
                 "request_throughput_avg": {"mean": 150.0},
                 "ttft_p99_ms": {"mean": 80.0},
             },
-            30: {
+            combo3: {
                 "request_throughput_avg": {"mean": 200.0},
                 "ttft_p99_ms": {"mean": 50.0},
             },  # Dominates all
-            40: {
+            combo4: {
                 "request_throughput_avg": {"mean": 120.0},
                 "ttft_p99_ms": {"mean": 90.0},
             },
-            50: {
+            combo5: {
                 "request_throughput_avg": {"mean": 180.0},
                 "ttft_p99_ms": {"mean": 70.0},
             },
         }
 
-        result = identify_pareto_optimal(per_value_stats)
-        # Only config 30 is Pareto optimal
-        assert result == [30]
+        result = identify_pareto_optimal(per_combination_stats)
+        # Only config 3 is Pareto optimal
+        assert result == [combo3]
 
     def test_four_dimensional_pareto_analysis(self):
         """Test Pareto analysis with 4 objectives (high-dimensional)."""
-        from aiperf.orchestrator.aggregation import (
-            Objective,
-            OptimizationDirection,
-            identify_pareto_optimal,
-        )
+        from aiperf.orchestrator.aggregation import identify_pareto_optimal
 
         objectives = [
             Objective("throughput", OptimizationDirection.MAXIMIZE),
@@ -527,20 +624,23 @@ class TestIdentifyParetoOptimal:
             Objective("memory", OptimizationDirection.MINIMIZE),
         ]
 
-        per_value_stats = {
-            10: {
+        combo1 = ParameterCombination({"concurrency": 10})
+        combo2 = ParameterCombination({"concurrency": 20})
+        combo3 = ParameterCombination({"concurrency": 30})
+        per_combination_stats = {
+            combo1: {
                 "throughput": {"mean": 100.0},
                 "latency": {"mean": 50.0},
                 "cost": {"mean": 10.0},
                 "memory": {"mean": 1000.0},
             },  # Pareto optimal (best cost and memory)
-            20: {
+            combo2: {
                 "throughput": {"mean": 150.0},
                 "latency": {"mean": 60.0},
                 "cost": {"mean": 15.0},
                 "memory": {"mean": 1200.0},
             },  # Pareto optimal (best throughput)
-            30: {
+            combo3: {
                 "throughput": {"mean": 120.0},
                 "latency": {"mean": 55.0},
                 "cost": {"mean": 12.0},
@@ -548,541 +648,109 @@ class TestIdentifyParetoOptimal:
             },  # Pareto optimal (balanced tradeoff)
         }
 
-        result = identify_pareto_optimal(per_value_stats, objectives)
+        result = identify_pareto_optimal(per_combination_stats, objectives)
         # All three are Pareto optimal - none dominates another on all 4 dimensions
-        assert sorted(result) == [10, 20, 30]
+        assert set(result) == {combo1, combo2, combo3}
 
     def test_negative_metric_values_in_pareto_analysis(self):
         """Test Pareto analysis works correctly with negative metric values."""
-        from aiperf.orchestrator.aggregation import (
-            Objective,
-            OptimizationDirection,
-            identify_pareto_optimal,
-        )
+        from aiperf.orchestrator.aggregation import identify_pareto_optimal
 
         objectives = [
             Objective("profit", OptimizationDirection.MAXIMIZE),  # Can be negative
             Objective("cost", OptimizationDirection.MINIMIZE),  # Can be negative
         ]
 
-        per_value_stats = {
-            10: {
+        combo1 = ParameterCombination({"concurrency": 10})
+        combo2 = ParameterCombination({"concurrency": 20})
+        combo3 = ParameterCombination({"concurrency": 30})
+        per_combination_stats = {
+            combo1: {
                 "profit": {"mean": -50.0},  # Worst profit
                 "cost": {"mean": 10.0},  # Best cost
             },  # Pareto optimal (best cost)
-            20: {
+            combo2: {
                 "profit": {"mean": -30.0},  # Best profit (least negative)
                 "cost": {"mean": 20.0},  # Worst cost
             },  # Pareto optimal (best profit)
-            30: {
+            combo3: {
                 "profit": {"mean": -40.0},  # Middle profit
                 "cost": {"mean": 15.0},  # Middle cost
-            },  # Dominated by neither 10 nor 20 - Pareto optimal
+            },  # Dominated by neither 1 nor 2 - Pareto optimal
         }
 
-        result = identify_pareto_optimal(per_value_stats, objectives)
+        result = identify_pareto_optimal(per_combination_stats, objectives)
         # All three form a Pareto frontier with different tradeoffs
-        assert sorted(result) == [10, 20, 30]
+        assert set(result) == {combo1, combo2, combo3}
 
     def test_zero_values_in_metrics(self):
         """Test Pareto analysis with zero values in metrics."""
         from aiperf.orchestrator.aggregation import identify_pareto_optimal
 
-        per_value_stats = {
-            10: {
+        combo1 = ParameterCombination({"concurrency": 10})
+        combo2 = ParameterCombination({"concurrency": 20})
+        combo3 = ParameterCombination({"concurrency": 30})
+        per_combination_stats = {
+            combo1: {
                 "request_throughput_avg": {"mean": 0.0},  # Zero throughput
                 "ttft_p99_ms": {"mean": 50.0},
             },
-            20: {
+            combo2: {
                 "request_throughput_avg": {"mean": 100.0},
                 "ttft_p99_ms": {"mean": 0.0},  # Zero latency
             },
-            30: {
+            combo3: {
                 "request_throughput_avg": {"mean": 50.0},
                 "ttft_p99_ms": {"mean": 25.0},
             },
         }
 
-        result = identify_pareto_optimal(per_value_stats)
-        # Config 20 dominates 10 (higher throughput, lower latency)
-        # Config 20 dominates 30 (higher throughput, lower latency)
-        assert result == [20]
+        result = identify_pareto_optimal(per_combination_stats)
+        # Config 2 dominates 1 (higher throughput, lower latency)
+        # Config 2 dominates 3 (higher throughput, lower latency)
+        assert result == [combo2]
 
     def test_mixed_domination_patterns(self):
         """Test complex domination patterns with multiple Pareto optimal points."""
         from aiperf.orchestrator.aggregation import identify_pareto_optimal
 
         # Create a scenario with multiple clusters of Pareto optimal points
-        per_value_stats = {
-            10: {
+        combo1 = ParameterCombination({"concurrency": 10})
+        combo2 = ParameterCombination({"concurrency": 20})
+        combo3 = ParameterCombination({"concurrency": 30})
+        combo4 = ParameterCombination({"concurrency": 40})
+        combo5 = ParameterCombination({"concurrency": 50})
+        combo6 = ParameterCombination({"concurrency": 60})
+        per_combination_stats = {
+            combo1: {
                 "request_throughput_avg": {"mean": 50.0},
                 "ttft_p99_ms": {"mean": 20.0},
             },  # Pareto optimal (best latency)
-            20: {
+            combo2: {
                 "request_throughput_avg": {"mean": 45.0},
                 "ttft_p99_ms": {"mean": 25.0},
-            },  # Dominated by 10
-            30: {
+            },  # Dominated by 1
+            combo3: {
                 "request_throughput_avg": {"mean": 100.0},
                 "ttft_p99_ms": {"mean": 40.0},
             },  # Pareto optimal
-            40: {
+            combo4: {
                 "request_throughput_avg": {"mean": 95.0},
                 "ttft_p99_ms": {"mean": 45.0},
-            },  # Dominated by 30
-            50: {
+            },  # Dominated by 3
+            combo5: {
                 "request_throughput_avg": {"mean": 150.0},
                 "ttft_p99_ms": {"mean": 60.0},
             },  # Pareto optimal
-            60: {
+            combo6: {
                 "request_throughput_avg": {"mean": 200.0},
                 "ttft_p99_ms": {"mean": 80.0},
             },  # Pareto optimal (best throughput)
         }
 
-        result = identify_pareto_optimal(per_value_stats)
-        # Configs 10, 30, 50, 60 form the Pareto frontier
-        assert result == [10, 30, 50, 60]
-
-
-class TestAnalyzeTrends:
-    """Tests for analyze_trends() function."""
-
-    def test_increasing_trend_no_inflection(self):
-        """Test steadily increasing trend with no inflection points."""
-        from aiperf.orchestrator.aggregation import analyze_trends
-
-        per_value_stats = {
-            10: {"request_throughput_avg": {"mean": 100.0}},
-            20: {"request_throughput_avg": {"mean": 180.0}},
-            30: {"request_throughput_avg": {"mean": 260.0}},
-            40: {"request_throughput_avg": {"mean": 340.0}},
-        }
-
-        result = analyze_trends(
-            per_value_stats, [10, 20, 30, 40], "request_throughput_avg"
-        )
-
-        # All positive rate of change, similar magnitude
-        assert result["rate_of_change"] == [80.0, 80.0, 80.0]
-        assert result["inflection_points"] == []
-
-    def test_decreasing_trend_no_inflection(self):
-        """Test steadily decreasing trend with no inflection points."""
-        from aiperf.orchestrator.aggregation import analyze_trends
-
-        per_value_stats = {
-            10: {"ttft_p99_ms": {"mean": 100.0}},
-            20: {"ttft_p99_ms": {"mean": 90.0}},
-            30: {"ttft_p99_ms": {"mean": 80.0}},
-            40: {"ttft_p99_ms": {"mean": 70.0}},
-        }
-
-        result = analyze_trends(per_value_stats, [10, 20, 30, 40], "ttft_p99_ms")
-
-        # All negative rate of change, similar magnitude
-        assert result["rate_of_change"] == [-10.0, -10.0, -10.0]
-        assert result["inflection_points"] == []
-
-    def test_plateau_trend(self):
-        """Test plateau trend with minimal changes."""
-        from aiperf.orchestrator.aggregation import analyze_trends
-
-        per_value_stats = {
-            10: {"request_throughput_avg": {"mean": 100.0}},
-            20: {"request_throughput_avg": {"mean": 101.0}},
-            30: {"request_throughput_avg": {"mean": 100.5}},
-            40: {"request_throughput_avg": {"mean": 100.2}},
-        }
-
-        result = analyze_trends(
-            per_value_stats, [10, 20, 30, 40], "request_throughput_avg"
-        )
-
-        # All near-zero rate of change
-        assert result["rate_of_change"] == pytest.approx([1.0, -0.5, -0.3])
-        # Inflection at 30 (sign flip from +1.0 to -0.5)
-        assert result["inflection_points"] == [30]
-
-    def test_sign_flip_inflection_point(self):
-        """Test inflection point detection when rate of change flips sign."""
-        from aiperf.orchestrator.aggregation import analyze_trends
-
-        per_value_stats = {
-            10: {"request_throughput_avg": {"mean": 100.0}},
-            20: {"request_throughput_avg": {"mean": 180.0}},  # +80
-            30: {"request_throughput_avg": {"mean": 270.0}},  # +90
-            40: {"request_throughput_avg": {"mean": 285.0}},  # +15 (inflection!)
-        }
-
-        result = analyze_trends(
-            per_value_stats, [10, 20, 30, 40], "request_throughput_avg"
-        )
-
-        assert result["rate_of_change"] == [80.0, 90.0, 15.0]
-        # Inflection at 40 (rate dropped significantly)
-        assert result["inflection_points"] == [40]
-
-    def test_magnitude_change_inflection_point(self):
-        """Test inflection point detection when rate magnitude changes > 50%."""
-        from aiperf.orchestrator.aggregation import analyze_trends
-
-        per_value_stats = {
-            10: {"request_throughput_avg": {"mean": 100.0}},
-            20: {"request_throughput_avg": {"mean": 200.0}},  # +100
-            30: {"request_throughput_avg": {"mean": 240.0}},  # +40 (60% drop)
-            40: {"request_throughput_avg": {"mean": 280.0}},  # +40 (no change)
-        }
-
-        result = analyze_trends(
-            per_value_stats, [10, 20, 30, 40], "request_throughput_avg"
-        )
-
-        assert result["rate_of_change"] == [100.0, 40.0, 40.0]
-        # Inflection at 30 (rate dropped by 60%)
-        assert result["inflection_points"] == [30]
-
-    def test_multiple_inflection_points(self):
-        """Test detection of multiple inflection points."""
-        from aiperf.orchestrator.aggregation import analyze_trends
-
-        per_value_stats = {
-            10: {"request_throughput_avg": {"mean": 100.0}},
-            20: {"request_throughput_avg": {"mean": 200.0}},  # +100
-            30: {"request_throughput_avg": {"mean": 220.0}},  # +20 (inflection!)
-            40: {"request_throughput_avg": {"mean": 320.0}},  # +100 (inflection!)
-            50: {"request_throughput_avg": {"mean": 340.0}},  # +20 (inflection!)
-        }
-
-        result = analyze_trends(
-            per_value_stats, [10, 20, 30, 40, 50], "request_throughput_avg"
-        )
-
-        assert result["rate_of_change"] == [100.0, 20.0, 100.0, 20.0]
-        # Inflections at 30, 40, and 50
-        assert result["inflection_points"] == [30, 40, 50]
-
-    def test_negative_to_positive_sign_flip(self):
-        """Test inflection point when trend changes from decreasing to increasing."""
-        from aiperf.orchestrator.aggregation import analyze_trends
-
-        per_value_stats = {
-            10: {"ttft_p99_ms": {"mean": 100.0}},
-            20: {"ttft_p99_ms": {"mean": 80.0}},  # -20
-            30: {"ttft_p99_ms": {"mean": 70.0}},  # -10
-            40: {"ttft_p99_ms": {"mean": 90.0}},  # +20 (sign flip!)
-        }
-
-        result = analyze_trends(per_value_stats, [10, 20, 30, 40], "ttft_p99_ms")
-
-        assert result["rate_of_change"] == [-20.0, -10.0, 20.0]
-        # Inflection at 40 (sign flip from negative to positive)
-        assert result["inflection_points"] == [40]
-
-    def test_positive_to_negative_sign_flip(self):
-        """Test inflection point when trend changes from increasing to decreasing."""
-        from aiperf.orchestrator.aggregation import analyze_trends
-
-        per_value_stats = {
-            10: {"request_throughput_avg": {"mean": 100.0}},
-            20: {"request_throughput_avg": {"mean": 180.0}},  # +80
-            30: {"request_throughput_avg": {"mean": 260.0}},  # +80
-            40: {"request_throughput_avg": {"mean": 240.0}},  # -20 (sign flip!)
-        }
-
-        result = analyze_trends(
-            per_value_stats, [10, 20, 30, 40], "request_throughput_avg"
-        )
-
-        assert result["rate_of_change"] == [80.0, 80.0, -20.0]
-        # Inflection at 40 (sign flip from positive to negative)
-        assert result["inflection_points"] == [40]
-
-    def test_two_values_no_inflection(self):
-        """Test with only two values (one rate of change, no inflection possible)."""
-        from aiperf.orchestrator.aggregation import analyze_trends
-
-        per_value_stats = {
-            10: {"request_throughput_avg": {"mean": 100.0}},
-            20: {"request_throughput_avg": {"mean": 180.0}},
-        }
-
-        result = analyze_trends(per_value_stats, [10, 20], "request_throughput_avg")
-
-        assert result["rate_of_change"] == [80.0]
-        assert result["inflection_points"] == []
-
-    def test_single_value_empty_results(self):
-        """Test with single value returns empty rate_of_change and inflection_points."""
-        from aiperf.orchestrator.aggregation import analyze_trends
-
-        per_value_stats = {
-            10: {"request_throughput_avg": {"mean": 100.0}},
-        }
-
-        result = analyze_trends(per_value_stats, [10], "request_throughput_avg")
-
-        assert result["rate_of_change"] == []
-        assert result["inflection_points"] == []
-
-    def test_zero_rate_of_change(self):
-        """Test with constant values (zero rate of change)."""
-        from aiperf.orchestrator.aggregation import analyze_trends
-
-        per_value_stats = {
-            10: {"request_throughput_avg": {"mean": 100.0}},
-            20: {"request_throughput_avg": {"mean": 100.0}},
-            30: {"request_throughput_avg": {"mean": 100.0}},
-            40: {"request_throughput_avg": {"mean": 100.0}},
-        }
-
-        result = analyze_trends(
-            per_value_stats, [10, 20, 30, 40], "request_throughput_avg"
-        )
-
-        assert result["rate_of_change"] == [0.0, 0.0, 0.0]
-        assert result["inflection_points"] == []
-
-    def test_exactly_50_percent_magnitude_change_no_inflection(self):
-        """Test that exactly 50% magnitude change does NOT trigger inflection."""
-        from aiperf.orchestrator.aggregation import analyze_trends
-
-        per_value_stats = {
-            10: {"request_throughput_avg": {"mean": 100.0}},
-            20: {"request_throughput_avg": {"mean": 200.0}},  # +100
-            30: {"request_throughput_avg": {"mean": 250.0}},  # +50 (exactly 50% of 100)
-        }
-
-        result = analyze_trends(per_value_stats, [10, 20, 30], "request_throughput_avg")
-
-        assert result["rate_of_change"] == [100.0, 50.0]
-        # No inflection (50% is the threshold, not > 50%)
-        assert result["inflection_points"] == []
-
-    def test_just_over_50_percent_magnitude_change_triggers_inflection(self):
-        """Test that > 50% magnitude change triggers inflection."""
-        from aiperf.orchestrator.aggregation import analyze_trends
-
-        per_value_stats = {
-            10: {"request_throughput_avg": {"mean": 100.0}},
-            20: {"request_throughput_avg": {"mean": 200.0}},  # +100
-            30: {"request_throughput_avg": {"mean": 249.0}},  # +49 (51% drop)
-        }
-
-        result = analyze_trends(per_value_stats, [10, 20, 30], "request_throughput_avg")
-
-        assert result["rate_of_change"] == [100.0, 49.0]
-        # Inflection at 30 (magnitude change > 50%)
-        assert result["inflection_points"] == [30]
-
-    def test_negative_values_in_metrics(self):
-        """Test that function works with negative metric values."""
-        from aiperf.orchestrator.aggregation import analyze_trends
-
-        per_value_stats = {
-            10: {"custom_metric": {"mean": -100.0}},
-            20: {"custom_metric": {"mean": -80.0}},  # +20
-            30: {"custom_metric": {"mean": -60.0}},  # +20
-            40: {
-                "custom_metric": {"mean": -50.0}
-            },  # +10 (exactly 50% drop, no inflection)
-        }
-
-        result = analyze_trends(per_value_stats, [10, 20, 30, 40], "custom_metric")
-
-        assert result["rate_of_change"] == [20.0, 20.0, 10.0]
-        # No inflection (50% is the threshold, not > 50%)
-        assert result["inflection_points"] == []
-
-    def test_mixed_trend_pattern(self):
-        """Test mixed trend with both increases and decreases."""
-        from aiperf.orchestrator.aggregation import analyze_trends
-
-        per_value_stats = {
-            10: {"request_throughput_avg": {"mean": 100.0}},
-            20: {"request_throughput_avg": {"mean": 150.0}},  # +50
-            30: {"request_throughput_avg": {"mean": 140.0}},  # -10 (sign flip!)
-            40: {"request_throughput_avg": {"mean": 180.0}},  # +40 (sign flip!)
-            50: {"request_throughput_avg": {"mean": 170.0}},  # -10 (sign flip!)
-        }
-
-        result = analyze_trends(
-            per_value_stats, [10, 20, 30, 40, 50], "request_throughput_avg"
-        )
-
-        assert result["rate_of_change"] == [50.0, -10.0, 40.0, -10.0]
-        # Inflections at 30, 40, 50 (all sign flips)
-        assert result["inflection_points"] == [30, 40, 50]
-
-    def test_sweep_values_order_matters(self):
-        """Test that sweep_values order determines the analysis order."""
-        from aiperf.orchestrator.aggregation import analyze_trends
-
-        per_value_stats = {
-            10: {"request_throughput_avg": {"mean": 100.0}},
-            20: {"request_throughput_avg": {"mean": 200.0}},
-            30: {"request_throughput_avg": {"mean": 150.0}},
-        }
-
-        # Different order produces different results
-        result1 = analyze_trends(
-            per_value_stats, [10, 20, 30], "request_throughput_avg"
-        )
-        result2 = analyze_trends(
-            per_value_stats, [10, 30, 20], "request_throughput_avg"
-        )
-
-        assert result1["rate_of_change"] == [100.0, -50.0]
-        assert result2["rate_of_change"] == [50.0, 50.0]
-        assert result1["inflection_points"] == [30]  # Sign flip
-        assert result2["inflection_points"] == []  # No inflection
-
-    def test_large_magnitude_increase(self):
-        """Test detection of large magnitude increase (> 50%)."""
-        from aiperf.orchestrator.aggregation import analyze_trends
-
-        per_value_stats = {
-            10: {"request_throughput_avg": {"mean": 100.0}},
-            20: {"request_throughput_avg": {"mean": 150.0}},  # +50
-            30: {"request_throughput_avg": {"mean": 250.0}},  # +100 (100% increase!)
-        }
-
-        result = analyze_trends(per_value_stats, [10, 20, 30], "request_throughput_avg")
-
-        assert result["rate_of_change"] == [50.0, 100.0]
-        # Inflection at 30 (rate doubled)
-        assert result["inflection_points"] == [30]
-
-    def test_realistic_throughput_saturation(self):
-        """Test realistic scenario: throughput increases then saturates."""
-        from aiperf.orchestrator.aggregation import analyze_trends
-
-        per_value_stats = {
-            10: {"request_throughput_avg": {"mean": 100.0}},
-            20: {"request_throughput_avg": {"mean": 180.0}},  # +80
-            30: {"request_throughput_avg": {"mean": 270.0}},  # +90
-            40: {"request_throughput_avg": {"mean": 285.0}},  # +15 (saturation!)
-            50: {"request_throughput_avg": {"mean": 290.0}},  # +5 (plateau)
-        }
-
-        result = analyze_trends(
-            per_value_stats, [10, 20, 30, 40, 50], "request_throughput_avg"
-        )
-
-        assert result["rate_of_change"] == [80.0, 90.0, 15.0, 5.0]
-        # Inflections at 40 (rate dropped 83%) and 50 (rate dropped 67%)
-        assert result["inflection_points"] == [40, 50]
-
-    def test_zero_to_nonzero_rate_change(self):
-        """Test inflection when rate changes from zero to non-zero."""
-        from aiperf.orchestrator.aggregation import analyze_trends
-
-        per_value_stats = {
-            10: {"request_throughput_avg": {"mean": 100.0}},
-            20: {"request_throughput_avg": {"mean": 100.0}},  # 0 change
-            30: {"request_throughput_avg": {"mean": 150.0}},  # +50 (from 0!)
-            40: {"request_throughput_avg": {"mean": 200.0}},  # +50
-        }
-
-        result = analyze_trends(
-            per_value_stats, [10, 20, 30, 40], "request_throughput_avg"
-        )
-
-        assert result["rate_of_change"] == [0.0, 50.0, 50.0]
-        # Inflection at 30 (rate changed from 0 to 50, sign flip: 0 * 50 = 0 < 0 is False)
-        # But magnitude check is skipped when prev_rate == 0
-        # So this should NOT trigger inflection based on current implementation
-        assert result["inflection_points"] == []
-
-    def test_nonzero_to_zero_rate_change(self):
-        """Test inflection when rate changes from non-zero to zero."""
-        from aiperf.orchestrator.aggregation import analyze_trends
-
-        per_value_stats = {
-            10: {"request_throughput_avg": {"mean": 100.0}},
-            20: {"request_throughput_avg": {"mean": 150.0}},  # +50
-            30: {"request_throughput_avg": {"mean": 200.0}},  # +50
-            40: {"request_throughput_avg": {"mean": 200.0}},  # 0 (plateau!)
-        }
-
-        result = analyze_trends(
-            per_value_stats, [10, 20, 30, 40], "request_throughput_avg"
-        )
-
-        assert result["rate_of_change"] == [50.0, 50.0, 0.0]
-        # Inflection at 40 (rate dropped from 50 to 0, 100% drop)
-        assert result["inflection_points"] == [40]
-
-    def test_very_small_rate_changes(self):
-        """Test with very small floating point rate changes."""
-        from aiperf.orchestrator.aggregation import analyze_trends
-
-        per_value_stats = {
-            10: {"request_throughput_avg": {"mean": 100.0}},
-            20: {"request_throughput_avg": {"mean": 100.001}},  # +0.001
-            30: {"request_throughput_avg": {"mean": 100.002}},  # +0.001
-            40: {"request_throughput_avg": {"mean": 100.003}},  # +0.001
-        }
-
-        result = analyze_trends(
-            per_value_stats, [10, 20, 30, 40], "request_throughput_avg"
-        )
-
-        assert result["rate_of_change"] == pytest.approx([0.001, 0.001, 0.001])
-        # No inflection (consistent small changes)
-        assert result["inflection_points"] == []
-
-    def test_empty_sweep_values(self):
-        """Test with empty sweep_values list."""
-        from aiperf.orchestrator.aggregation import analyze_trends
-
-        per_value_stats = {}
-
-        result = analyze_trends(per_value_stats, [], "request_throughput_avg")
-
-        assert result["rate_of_change"] == []
-        assert result["inflection_points"] == []
-
-    def test_floating_point_precision_in_magnitude_check(self):
-        """Test that floating point precision doesn't cause spurious inflections."""
-        from aiperf.orchestrator.aggregation import analyze_trends
-
-        per_value_stats = {
-            10: {"request_throughput_avg": {"mean": 100.0}},
-            20: {"request_throughput_avg": {"mean": 150.0}},  # +50.0
-            30: {"request_throughput_avg": {"mean": 200.0}},  # +50.0 (exactly same)
-            40: {"request_throughput_avg": {"mean": 250.0}},  # +50.0 (exactly same)
-        }
-
-        result = analyze_trends(
-            per_value_stats, [10, 20, 30, 40], "request_throughput_avg"
-        )
-
-        assert result["rate_of_change"] == [50.0, 50.0, 50.0]
-        # No inflection (all rates identical)
-        assert result["inflection_points"] == []
-
-    def test_alternating_zero_and_nonzero_rates(self):
-        """Test pattern with alternating zero and non-zero rate changes."""
-        from aiperf.orchestrator.aggregation import analyze_trends
-
-        per_value_stats = {
-            10: {"request_throughput_avg": {"mean": 100.0}},
-            20: {"request_throughput_avg": {"mean": 150.0}},  # +50
-            30: {"request_throughput_avg": {"mean": 150.0}},  # 0
-            40: {"request_throughput_avg": {"mean": 200.0}},  # +50
-            50: {"request_throughput_avg": {"mean": 200.0}},  # 0
-        }
-
-        result = analyze_trends(
-            per_value_stats, [10, 20, 30, 40, 50], "request_throughput_avg"
-        )
-
-        assert result["rate_of_change"] == [50.0, 0.0, 50.0, 0.0]
-        # Inflections at 30 (sign flip: 50*0=0, not <0, but magnitude: |0-50|>0.5*50)
-        # and 40 (sign flip: 0*50=0, not <0, and prev_rate==0 so no magnitude check)
-        # and 50 (magnitude: |0-50|>0.5*50)
-        assert result["inflection_points"] == [30, 50]
+        result = identify_pareto_optimal(per_combination_stats)
+        # Configs 1, 3, 5, 6 form the Pareto frontier
+        assert set(result) == {combo1, combo3, combo5, combo6}
 
 
 class TestSweepAggregation:
@@ -1092,76 +760,83 @@ class TestSweepAggregation:
         """Test that compute() returns a dict with all required keys."""
         from aiperf.orchestrator.aggregation import SweepAggregation
 
-        per_value_stats = {
-            10: {
+        combo1 = ParameterCombination({"concurrency": 10})
+        combo2 = ParameterCombination({"concurrency": 20})
+        per_combination_stats = {
+            combo1: {
                 "request_throughput_avg": {"mean": 100.0},
                 "ttft_p99_ms": {"mean": 50.0},
             },
-            20: {
+            combo2: {
                 "request_throughput_avg": {"mean": 180.0},
                 "ttft_p99_ms": {"mean": 60.0},
             },
         }
+        sweep_parameters = [{"name": "concurrency", "values": [10, 20]}]
 
-        result = SweepAggregation.compute(per_value_stats, [10, 20])
+        result = SweepAggregation.compute(per_combination_stats, sweep_parameters)
 
         # Verify all required keys are present
         assert "metadata" in result
-        assert "per_value_metrics" in result
+        assert "per_combination_metrics" in result
         assert "best_configurations" in result
         assert "pareto_optimal" in result
-        assert "trends" in result
 
     def test_metadata_section_structure(self):
         """Test that metadata section has correct structure."""
         from aiperf.orchestrator.aggregation import SweepAggregation
 
-        per_value_stats = {
-            10: {"request_throughput_avg": {"mean": 100.0}},
-            20: {"request_throughput_avg": {"mean": 180.0}},
-            30: {"request_throughput_avg": {"mean": 260.0}},
+        combo1 = ParameterCombination({"concurrency": 10})
+        combo2 = ParameterCombination({"concurrency": 20})
+        combo3 = ParameterCombination({"concurrency": 30})
+        per_combination_stats = {
+            combo1: {"request_throughput_avg": {"mean": 100.0}},
+            combo2: {"request_throughput_avg": {"mean": 180.0}},
+            combo3: {"request_throughput_avg": {"mean": 260.0}},
         }
+        sweep_parameters = [{"name": "concurrency", "values": [10, 20, 30]}]
 
-        result = SweepAggregation.compute(per_value_stats, [10, 20, 30])
+        result = SweepAggregation.compute(per_combination_stats, sweep_parameters)
 
         metadata = result["metadata"]
-        assert metadata["parameter_name"] == "concurrency"
-        assert metadata["parameter_values"] == [10, 20, 30]
-        assert metadata["num_values"] == 3
+        assert metadata["sweep_parameters"] == sweep_parameters
+        assert metadata["num_combinations"] == 3
 
-    def test_per_value_metrics_converts_int_keys_to_strings(self):
-        """Test that per_value_metrics converts int keys to strings for JSON compatibility."""
+    def test_per_combination_metrics_structure(self):
+        """Test that per_combination_metrics has correct structure."""
         from aiperf.orchestrator.aggregation import SweepAggregation
 
-        per_value_stats = {
-            10: {"request_throughput_avg": {"mean": 100.0}},
-            20: {"request_throughput_avg": {"mean": 180.0}},
+        combo1 = ParameterCombination({"concurrency": 10})
+        combo2 = ParameterCombination({"concurrency": 20})
+        per_combination_stats = {
+            combo1: {"request_throughput_avg": {"mean": 100.0}},
+            combo2: {"request_throughput_avg": {"mean": 180.0}},
         }
+        sweep_parameters = [{"name": "concurrency", "values": [10, 20]}]
 
-        result = SweepAggregation.compute(per_value_stats, [10, 20])
+        result = SweepAggregation.compute(per_combination_stats, sweep_parameters)
 
-        per_value_metrics = result["per_value_metrics"]
-        # Keys should be strings
-        assert "10" in per_value_metrics
-        assert "20" in per_value_metrics
-        # Should not have int keys
-        assert 10 not in per_value_metrics
-        assert 20 not in per_value_metrics
+        per_combination_metrics = result["per_combination_metrics"]
+        assert len(per_combination_metrics) == 2
+        assert all("parameters" in item for item in per_combination_metrics)
+        assert all("metrics" in item for item in per_combination_metrics)
 
-    def test_per_value_metrics_preserves_stats_structure(self):
-        """Test that per_value_metrics preserves the original stats structure."""
+    def test_per_combination_metrics_preserves_stats_structure(self):
+        """Test that per_combination_metrics preserves the original stats structure."""
         from aiperf.orchestrator.aggregation import SweepAggregation
 
-        per_value_stats = {
-            10: {
+        combo = ParameterCombination({"concurrency": 10})
+        per_combination_stats = {
+            combo: {
                 "request_throughput_avg": {"mean": 100.0, "std": 5.0, "min": 95.0},
                 "ttft_p99_ms": {"mean": 50.0, "std": 2.0},
             },
         }
+        sweep_parameters = [{"name": "concurrency", "values": [10]}]
 
-        result = SweepAggregation.compute(per_value_stats, [10])
+        result = SweepAggregation.compute(per_combination_stats, sweep_parameters)
 
-        metrics = result["per_value_metrics"]["10"]
+        metrics = result["per_combination_metrics"][0]["metrics"]
         assert metrics["request_throughput_avg"]["mean"] == 100.0
         assert metrics["request_throughput_avg"]["std"] == 5.0
         assert metrics["request_throughput_avg"]["min"] == 95.0
@@ -1175,38 +850,44 @@ class TestSweepAggregation:
         # Config 1: high throughput, high latency
         # Config 2: low throughput, low latency
         # Both should be Pareto optimal
-        per_value_stats = {
-            10: {
+        combo1 = ParameterCombination({"concurrency": 10})
+        combo2 = ParameterCombination({"concurrency": 20})
+        per_combination_stats = {
+            combo1: {
                 "request_throughput_avg": {"mean": 100.0},
                 "ttft_p99_ms": {"mean": 100.0},
             },
-            20: {
+            combo2: {
                 "request_throughput_avg": {"mean": 50.0},
                 "ttft_p99_ms": {"mean": 50.0},
             },
         }
+        sweep_parameters = [{"name": "concurrency", "values": [10, 20]}]
 
-        result = SweepAggregation.compute(per_value_stats, [10, 20])
+        result = SweepAggregation.compute(per_combination_stats, sweep_parameters)
 
-        assert sorted(result["pareto_optimal"]) == [10, 20]
+        # Both should be in pareto_optimal (as dicts)
+        pareto_params = [item["concurrency"] for item in result["pareto_optimal"]]
+        assert sorted(pareto_params) == [10, 20]
 
     def test_single_value_sweep(self):
         """Test compute() with single sweep value."""
         from aiperf.orchestrator.aggregation import SweepAggregation
 
-        per_value_stats = {
-            10: {
+        combo = ParameterCombination({"concurrency": 10})
+        per_combination_stats = {
+            combo: {
                 "request_throughput_avg": {"mean": 100.0},
                 "ttft_p99_ms": {"mean": 50.0},
             },
         }
+        sweep_parameters = [{"name": "concurrency", "values": [10]}]
 
-        result = SweepAggregation.compute(per_value_stats, [10])
+        result = SweepAggregation.compute(per_combination_stats, sweep_parameters)
 
-        assert result["metadata"]["num_values"] == 1
-        assert result["metadata"]["parameter_values"] == [10]
-        assert "10" in result["per_value_metrics"]
-        assert result["pareto_optimal"] == [10]
+        assert result["metadata"]["num_combinations"] == 1
+        assert len(result["per_combination_metrics"]) == 1
+        assert result["pareto_optimal"] == [{"concurrency": 10}]
 
     def test_empty_sweep_values(self):
         """Test compute() with empty sweep values."""
@@ -1214,94 +895,71 @@ class TestSweepAggregation:
 
         result = SweepAggregation.compute({}, [])
 
-        assert result["metadata"]["num_values"] == 0
-        assert result["metadata"]["parameter_values"] == []
-        assert result["per_value_metrics"] == {}
+        assert result["metadata"]["num_combinations"] == 1  # Empty product is 1
+        assert result["per_combination_metrics"] == []
         assert result["pareto_optimal"] == []
 
     def test_best_configurations_is_dict(self):
-        """Test that best_configurations is a dict (implementation in task 8.8)."""
+        """Test that best_configurations is a dict."""
         from aiperf.orchestrator.aggregation import SweepAggregation
 
-        per_value_stats = {
-            10: {"request_throughput_avg": {"mean": 100.0}},
-            20: {"request_throughput_avg": {"mean": 180.0}},
+        combo1 = ParameterCombination({"concurrency": 10})
+        combo2 = ParameterCombination({"concurrency": 20})
+        per_combination_stats = {
+            combo1: {"request_throughput_avg": {"mean": 100.0}},
+            combo2: {"request_throughput_avg": {"mean": 180.0}},
         }
+        sweep_parameters = [{"name": "concurrency", "values": [10, 20]}]
 
-        result = SweepAggregation.compute(per_value_stats, [10, 20])
+        result = SweepAggregation.compute(per_combination_stats, sweep_parameters)
 
         assert isinstance(result["best_configurations"], dict)
-
-    def test_trends_is_dict(self):
-        """Test that trends is a dict (implementation in task 8.7)."""
-        from aiperf.orchestrator.aggregation import SweepAggregation
-
-        per_value_stats = {
-            10: {"request_throughput_avg": {"mean": 100.0}},
-            20: {"request_throughput_avg": {"mean": 180.0}},
-        }
-
-        result = SweepAggregation.compute(per_value_stats, [10, 20])
-
-        assert isinstance(result["trends"], dict)
 
     def test_compute_is_static_method(self):
         """Test that compute() is a static method (can be called without instance)."""
         from aiperf.orchestrator.aggregation import SweepAggregation
 
-        per_value_stats = {
-            10: {"request_throughput_avg": {"mean": 100.0}},
+        combo = ParameterCombination({"concurrency": 10})
+        per_combination_stats = {
+            combo: {"request_throughput_avg": {"mean": 100.0}},
         }
+        sweep_parameters = [{"name": "concurrency", "values": [10]}]
 
         # Should be callable without creating an instance
-        result = SweepAggregation.compute(per_value_stats, [10])
+        result = SweepAggregation.compute(per_combination_stats, sweep_parameters)
         assert result is not None
 
-    def test_multiple_sweep_values_preserves_order(self):
-        """Test that sweep values order is preserved in metadata."""
+    def test_multiple_sweep_parameters(self):
+        """Test with multiple sweep parameters."""
         from aiperf.orchestrator.aggregation import SweepAggregation
 
-        per_value_stats = {
-            40: {"request_throughput_avg": {"mean": 100.0}},
-            10: {"request_throughput_avg": {"mean": 180.0}},
-            30: {"request_throughput_avg": {"mean": 260.0}},
-            20: {"request_throughput_avg": {"mean": 340.0}},
+        combo1 = ParameterCombination({"concurrency": 10, "request_rate": 100})
+        combo2 = ParameterCombination({"concurrency": 10, "request_rate": 200})
+        combo3 = ParameterCombination({"concurrency": 20, "request_rate": 100})
+        combo4 = ParameterCombination({"concurrency": 20, "request_rate": 200})
+        per_combination_stats = {
+            combo1: {"request_throughput_avg": {"mean": 100.0}},
+            combo2: {"request_throughput_avg": {"mean": 180.0}},
+            combo3: {"request_throughput_avg": {"mean": 150.0}},
+            combo4: {"request_throughput_avg": {"mean": 200.0}},
         }
+        sweep_parameters = [
+            {"name": "concurrency", "values": [10, 20]},
+            {"name": "request_rate", "values": [100, 200]},
+        ]
 
-        # Provide values in specific order
-        sweep_values = [10, 20, 30, 40]
-        result = SweepAggregation.compute(per_value_stats, sweep_values)
+        result = SweepAggregation.compute(per_combination_stats, sweep_parameters)
 
-        # Order should be preserved
-        assert result["metadata"]["parameter_values"] == [10, 20, 30, 40]
-
-    def test_large_sweep_values(self):
-        """Test compute() with many sweep values."""
-        from aiperf.orchestrator.aggregation import SweepAggregation
-
-        # Create 10 sweep values
-        per_value_stats = {}
-        sweep_values = []
-        for i in range(10, 110, 10):
-            per_value_stats[i] = {
-                "request_throughput_avg": {"mean": float(i * 10)},
-                "ttft_p99_ms": {"mean": float(i)},
-            }
-            sweep_values.append(i)
-
-        result = SweepAggregation.compute(per_value_stats, sweep_values)
-
-        assert result["metadata"]["num_values"] == 10
-        assert len(result["per_value_metrics"]) == 10
-        assert "10" in result["per_value_metrics"]
-        assert "100" in result["per_value_metrics"]
+        assert result["metadata"]["num_combinations"] == 4
+        assert len(result["per_combination_metrics"]) == 4
 
     def test_compute_with_complex_stats_structure(self):
         """Test compute() preserves complex nested stats structure."""
         from aiperf.orchestrator.aggregation import SweepAggregation
 
-        per_value_stats = {
-            10: {
+        combo = ParameterCombination({"concurrency": 10})
+        per_combination_stats = {
+            combo: {
                 "request_throughput_avg": {
                     "mean": 100.0,
                     "std": 5.0,
@@ -1319,10 +977,11 @@ class TestSweepAggregation:
                 },
             },
         }
+        sweep_parameters = [{"name": "concurrency", "values": [10]}]
 
-        result = SweepAggregation.compute(per_value_stats, [10])
+        result = SweepAggregation.compute(per_combination_stats, sweep_parameters)
 
-        metrics = result["per_value_metrics"]["10"]
+        metrics = result["per_combination_metrics"][0]["metrics"]
         # Verify all nested fields are preserved
         assert metrics["request_throughput_avg"]["mean"] == 100.0
         assert metrics["request_throughput_avg"]["std"] == 5.0
@@ -1333,271 +992,6 @@ class TestSweepAggregation:
         assert metrics["request_throughput_avg"]["ci_high"] == 106.7
         assert metrics["request_throughput_avg"]["unit"] == "requests/sec"
 
-    def test_trends_computed_for_key_metrics(self):
-        """Test that trends are computed for key metrics (request_throughput_avg, ttft_p99_ms)."""
-        from aiperf.orchestrator.aggregation import SweepAggregation
-
-        per_value_stats = {
-            10: {
-                "request_throughput_avg": {"mean": 100.0},
-                "ttft_p99_ms": {"mean": 50.0},
-            },
-            20: {
-                "request_throughput_avg": {"mean": 180.0},
-                "ttft_p99_ms": {"mean": 60.0},
-            },
-            30: {
-                "request_throughput_avg": {"mean": 270.0},
-                "ttft_p99_ms": {"mean": 75.0},
-            },
-        }
-
-        result = SweepAggregation.compute(per_value_stats, [10, 20, 30])
-
-        trends = result["trends"]
-        # Should have trends for both key metrics
-        assert "request_throughput_avg" in trends
-        assert "ttft_p99_ms" in trends
-
-    def test_trends_structure_matches_analyze_trends_output(self):
-        """Test that trends structure matches analyze_trends() output."""
-        from aiperf.orchestrator.aggregation import SweepAggregation
-
-        per_value_stats = {
-            10: {
-                "request_throughput_avg": {"mean": 100.0},
-                "ttft_p99_ms": {"mean": 50.0},
-            },
-            20: {
-                "request_throughput_avg": {"mean": 180.0},
-                "ttft_p99_ms": {"mean": 60.0},
-            },
-        }
-
-        result = SweepAggregation.compute(per_value_stats, [10, 20])
-
-        # Each trend should have rate_of_change and inflection_points
-        for metric_key in ["request_throughput_avg", "ttft_p99_ms"]:
-            assert "rate_of_change" in result["trends"][metric_key]
-            assert "inflection_points" in result["trends"][metric_key]
-
-    def test_trends_empty_for_single_value(self):
-        """Test that trends is empty dict for single sweep value."""
-        from aiperf.orchestrator.aggregation import SweepAggregation
-
-        per_value_stats = {
-            10: {
-                "request_throughput_avg": {"mean": 100.0},
-                "ttft_p99_ms": {"mean": 50.0},
-            },
-        }
-
-        result = SweepAggregation.compute(per_value_stats, [10])
-
-        # No trends with single value
-        assert result["trends"] == {}
-
-    def test_trends_empty_for_empty_stats(self):
-        """Test that trends is empty dict for empty stats."""
-        from aiperf.orchestrator.aggregation import SweepAggregation
-
-        result = SweepAggregation.compute({}, [])
-
-        assert result["trends"] == {}
-
-    def test_trends_only_includes_present_metrics(self):
-        """Test that trends only includes metrics present in all sweep values."""
-        from aiperf.orchestrator.aggregation import SweepAggregation
-
-        per_value_stats = {
-            10: {
-                "request_throughput_avg": {"mean": 100.0},
-                "custom_metric": {"mean": 50.0},
-            },
-            20: {
-                "request_throughput_avg": {"mean": 180.0},
-                # Missing custom_metric
-            },
-        }
-
-        result = SweepAggregation.compute(per_value_stats, [10, 20])
-
-        trends = result["trends"]
-        # Should have throughput trend (present in all and is a key metric)
-        assert "request_throughput_avg" in trends
-        # Should NOT have custom_metric trend (not a key metric)
-        assert "custom_metric" not in trends
-
-    def test_trends_skips_missing_key_metrics(self):
-        """Test that trends skips key metrics that don't exist in the data."""
-        from aiperf.orchestrator.aggregation import SweepAggregation
-
-        # Only has custom metrics, not the key metrics
-        per_value_stats = {
-            10: {"custom_metric": {"mean": 100.0}},
-            20: {"custom_metric": {"mean": 180.0}},
-        }
-
-        result = SweepAggregation.compute(per_value_stats, [10, 20])
-
-        trends = result["trends"]
-        # Should be empty (no key metrics present)
-        assert trends == {}
-
-    def test_trends_rate_of_change_values(self):
-        """Test that trends contain correct rate_of_change values."""
-        from aiperf.orchestrator.aggregation import SweepAggregation
-
-        per_value_stats = {
-            10: {"request_throughput_avg": {"mean": 100.0}},
-            20: {"request_throughput_avg": {"mean": 180.0}},
-            30: {"request_throughput_avg": {"mean": 270.0}},
-        }
-
-        result = SweepAggregation.compute(per_value_stats, [10, 20, 30])
-
-        rate_of_change = result["trends"]["request_throughput_avg"]["rate_of_change"]
-        assert rate_of_change == [80.0, 90.0]
-
-    def test_trends_inflection_points_detected(self):
-        """Test that trends detect inflection points correctly."""
-        from aiperf.orchestrator.aggregation import SweepAggregation
-
-        per_value_stats = {
-            10: {"request_throughput_avg": {"mean": 100.0}},
-            20: {"request_throughput_avg": {"mean": 180.0}},  # +80
-            30: {"request_throughput_avg": {"mean": 270.0}},  # +90
-            40: {"request_throughput_avg": {"mean": 285.0}},  # +15 (inflection!)
-        }
-
-        result = SweepAggregation.compute(per_value_stats, [10, 20, 30, 40])
-
-        inflection_points = result["trends"]["request_throughput_avg"][
-            "inflection_points"
-        ]
-        assert inflection_points == [40]
-
-    def test_trends_with_both_metrics_having_different_patterns(self):
-        """Test trends when throughput and latency have different patterns."""
-        from aiperf.orchestrator.aggregation import SweepAggregation
-
-        per_value_stats = {
-            10: {
-                "request_throughput_avg": {"mean": 100.0},
-                "ttft_p99_ms": {"mean": 30.0},
-            },
-            20: {
-                "request_throughput_avg": {"mean": 180.0},  # +80
-                "ttft_p99_ms": {"mean": 35.0},  # +5
-            },
-            30: {
-                "request_throughput_avg": {"mean": 270.0},  # +90
-                "ttft_p99_ms": {"mean": 50.0},  # +15 (inflection!)
-            },
-        }
-
-        result = SweepAggregation.compute(per_value_stats, [10, 20, 30])
-
-        # Throughput: steady increase, no inflection
-        throughput_trends = result["trends"]["request_throughput_avg"]
-        assert throughput_trends["rate_of_change"] == [80.0, 90.0]
-        assert throughput_trends["inflection_points"] == []
-
-        # Latency: inflection at 30
-        latency_trends = result["trends"]["ttft_p99_ms"]
-        assert latency_trends["rate_of_change"] == [5.0, 15.0]
-        assert latency_trends["inflection_points"] == [30]
-
-    def test_trends_with_additional_metrics_beyond_key_metrics(self):
-        """Test that trends only analyzes key metrics, not all available metrics."""
-        from aiperf.orchestrator.aggregation import SweepAggregation
-
-        per_value_stats = {
-            10: {
-                "request_throughput_avg": {"mean": 100.0},
-                "ttft_p99_ms": {"mean": 50.0},
-                "custom_metric_1": {"mean": 10.0},
-                "custom_metric_2": {"mean": 20.0},
-            },
-            20: {
-                "request_throughput_avg": {"mean": 180.0},
-                "ttft_p99_ms": {"mean": 60.0},
-                "custom_metric_1": {"mean": 15.0},
-                "custom_metric_2": {"mean": 25.0},
-            },
-        }
-
-        result = SweepAggregation.compute(per_value_stats, [10, 20])
-
-        trends = result["trends"]
-        # Should only have key metrics
-        assert set(trends.keys()) == {"request_throughput_avg", "ttft_p99_ms"}
-        # Should NOT have custom metrics
-        assert "custom_metric_1" not in trends
-        assert "custom_metric_2" not in trends
-
-    def test_trends_with_realistic_throughput_saturation(self):
-        """Test trends with realistic throughput saturation pattern."""
-        from aiperf.orchestrator.aggregation import SweepAggregation
-
-        per_value_stats = {
-            10: {
-                "request_throughput_avg": {"mean": 100.0},
-                "ttft_p99_ms": {"mean": 30.0},
-            },
-            20: {
-                "request_throughput_avg": {"mean": 180.0},
-                "ttft_p99_ms": {"mean": 35.0},
-            },
-            30: {
-                "request_throughput_avg": {"mean": 270.0},
-                "ttft_p99_ms": {"mean": 45.0},
-            },
-            40: {
-                "request_throughput_avg": {"mean": 285.0},  # Saturation starts
-                "ttft_p99_ms": {"mean": 70.0},  # Latency increases
-            },
-            50: {
-                "request_throughput_avg": {"mean": 290.0},  # Plateau
-                "ttft_p99_ms": {"mean": 120.0},  # Latency spikes
-            },
-        }
-
-        result = SweepAggregation.compute(per_value_stats, [10, 20, 30, 40, 50])
-
-        # Throughput: inflections at saturation points
-        throughput_trends = result["trends"]["request_throughput_avg"]
-        assert 40 in throughput_trends["inflection_points"]
-        assert 50 in throughput_trends["inflection_points"]
-
-        # Latency: inflections as it increases
-        latency_trends = result["trends"]["ttft_p99_ms"]
-        assert len(latency_trends["inflection_points"]) > 0
-
-    def test_trends_preserves_sweep_values_order(self):
-        """Test that trends analysis respects sweep_values order."""
-        from aiperf.orchestrator.aggregation import SweepAggregation
-
-        per_value_stats = {
-            10: {"request_throughput_avg": {"mean": 100.0}},
-            20: {"request_throughput_avg": {"mean": 200.0}},
-            30: {"request_throughput_avg": {"mean": 150.0}},
-        }
-
-        # Different order produces different trends
-        result1 = SweepAggregation.compute(per_value_stats, [10, 20, 30])
-        result2 = SweepAggregation.compute(per_value_stats, [10, 30, 20])
-
-        # Different rate of change based on order
-        assert result1["trends"]["request_throughput_avg"]["rate_of_change"] == [
-            100.0,
-            -50.0,
-        ]
-        assert result2["trends"]["request_throughput_avg"]["rate_of_change"] == [
-            50.0,
-            50.0,
-        ]
-
 
 class TestBestConfigurations:
     """Tests for best_configurations section in SweepAggregation.compute()."""
@@ -1606,81 +1000,102 @@ class TestBestConfigurations:
         """Test that best throughput configuration is correctly identified."""
         from aiperf.orchestrator.aggregation import SweepAggregation
 
-        per_value_stats = {
-            10: {"request_throughput_avg": {"mean": 100.0}},
-            20: {"request_throughput_avg": {"mean": 180.0}},
-            30: {"request_throughput_avg": {"mean": 260.0}},
-            40: {"request_throughput_avg": {"mean": 350.2}},  # Best
+        combo1 = ParameterCombination({"concurrency": 10})
+        combo2 = ParameterCombination({"concurrency": 20})
+        combo3 = ParameterCombination({"concurrency": 30})
+        combo4 = ParameterCombination({"concurrency": 40})
+        per_combination_stats = {
+            combo1: {"request_throughput_avg": {"mean": 100.0}},
+            combo2: {"request_throughput_avg": {"mean": 180.0}},
+            combo3: {"request_throughput_avg": {"mean": 260.0}},
+            combo4: {"request_throughput_avg": {"mean": 350.2}},  # Best
         }
+        sweep_parameters = [{"name": "concurrency", "values": [10, 20, 30, 40]}]
 
-        result = SweepAggregation.compute(per_value_stats, [10, 20, 30, 40])
+        result = SweepAggregation.compute(per_combination_stats, sweep_parameters)
 
         best_throughput = result["best_configurations"]["best_throughput"]
-        assert best_throughput["value"] == 40
+        assert best_throughput["parameters"] == {"concurrency": 40}
         assert best_throughput["metric"] == 350.2
 
     def test_best_latency_identified(self):
         """Test that best latency configuration is correctly identified."""
         from aiperf.orchestrator.aggregation import SweepAggregation
 
-        per_value_stats = {
-            10: {"ttft_p99_ms": {"mean": 120.5}},  # Best
-            20: {"ttft_p99_ms": {"mean": 150.0}},
-            30: {"ttft_p99_ms": {"mean": 180.0}},
-            40: {"ttft_p99_ms": {"mean": 200.0}},
+        combo1 = ParameterCombination({"concurrency": 10})
+        combo2 = ParameterCombination({"concurrency": 20})
+        combo3 = ParameterCombination({"concurrency": 30})
+        combo4 = ParameterCombination({"concurrency": 40})
+        per_combination_stats = {
+            combo1: {"ttft_p99_ms": {"mean": 120.5}},  # Best
+            combo2: {"ttft_p99_ms": {"mean": 150.0}},
+            combo3: {"ttft_p99_ms": {"mean": 180.0}},
+            combo4: {"ttft_p99_ms": {"mean": 200.0}},
         }
+        sweep_parameters = [{"name": "concurrency", "values": [10, 20, 30, 40]}]
 
-        result = SweepAggregation.compute(per_value_stats, [10, 20, 30, 40])
+        result = SweepAggregation.compute(per_combination_stats, sweep_parameters)
 
         best_latency = result["best_configurations"]["best_latency_p99"]
-        assert best_latency["value"] == 10
+        assert best_latency["parameters"] == {"concurrency": 10}
         assert best_latency["metric"] == 120.5
 
     def test_best_configurations_with_both_metrics(self):
         """Test best configurations when both throughput and latency are present."""
         from aiperf.orchestrator.aggregation import SweepAggregation
 
-        per_value_stats = {
-            10: {
+        combo1 = ParameterCombination({"concurrency": 10})
+        combo2 = ParameterCombination({"concurrency": 20})
+        combo3 = ParameterCombination({"concurrency": 30})
+        per_combination_stats = {
+            combo1: {
                 "request_throughput_avg": {"mean": 100.0},
                 "ttft_p99_ms": {"mean": 50.0},  # Best latency
             },
-            20: {
+            combo2: {
                 "request_throughput_avg": {"mean": 180.0},
                 "ttft_p99_ms": {"mean": 60.0},
             },
-            30: {
+            combo3: {
                 "request_throughput_avg": {"mean": 350.2},  # Best throughput
                 "ttft_p99_ms": {"mean": 80.0},
             },
         }
+        sweep_parameters = [{"name": "concurrency", "values": [10, 20, 30]}]
 
-        result = SweepAggregation.compute(per_value_stats, [10, 20, 30])
+        result = SweepAggregation.compute(per_combination_stats, sweep_parameters)
 
-        # Best throughput at value 30
-        assert result["best_configurations"]["best_throughput"]["value"] == 30
+        # Best throughput at concurrency 30
+        assert result["best_configurations"]["best_throughput"]["parameters"] == {
+            "concurrency": 30
+        }
         assert result["best_configurations"]["best_throughput"]["metric"] == 350.2
 
-        # Best latency at value 10
-        assert result["best_configurations"]["best_latency_p99"]["value"] == 10
+        # Best latency at concurrency 10
+        assert result["best_configurations"]["best_latency_p99"]["parameters"] == {
+            "concurrency": 10
+        }
         assert result["best_configurations"]["best_latency_p99"]["metric"] == 50.0
 
     def test_best_configurations_includes_units(self):
         """Test that best configurations include unit fields."""
         from aiperf.orchestrator.aggregation import SweepAggregation
 
-        per_value_stats = {
-            10: {
+        combo1 = ParameterCombination({"concurrency": 10})
+        combo2 = ParameterCombination({"concurrency": 20})
+        per_combination_stats = {
+            combo1: {
                 "request_throughput_avg": {"mean": 100.0, "unit": "requests/sec"},
                 "ttft_p99_ms": {"mean": 50.0, "unit": "ms"},
             },
-            20: {
+            combo2: {
                 "request_throughput_avg": {"mean": 180.0, "unit": "requests/sec"},
                 "ttft_p99_ms": {"mean": 60.0, "unit": "ms"},
             },
         }
+        sweep_parameters = [{"name": "concurrency", "values": [10, 20]}]
 
-        result = SweepAggregation.compute(per_value_stats, [10, 20])
+        result = SweepAggregation.compute(per_combination_stats, sweep_parameters)
 
         # Check units are included
         assert (
@@ -1692,18 +1107,21 @@ class TestBestConfigurations:
         """Test that default units are used when not present in stats."""
         from aiperf.orchestrator.aggregation import SweepAggregation
 
-        per_value_stats = {
-            10: {
+        combo1 = ParameterCombination({"concurrency": 10})
+        combo2 = ParameterCombination({"concurrency": 20})
+        per_combination_stats = {
+            combo1: {
                 "request_throughput_avg": {"mean": 100.0},  # No unit
                 "ttft_p99_ms": {"mean": 50.0},  # No unit
             },
-            20: {
+            combo2: {
                 "request_throughput_avg": {"mean": 180.0},
                 "ttft_p99_ms": {"mean": 60.0},
             },
         }
+        sweep_parameters = [{"name": "concurrency", "values": [10, 20]}]
 
-        result = SweepAggregation.compute(per_value_stats, [10, 20])
+        result = SweepAggregation.compute(per_combination_stats, sweep_parameters)
 
         # Check default units are used
         assert (
@@ -1723,16 +1141,21 @@ class TestBestConfigurations:
         """Test that only best_throughput is included when latency metric is missing."""
         from aiperf.orchestrator.aggregation import SweepAggregation
 
-        per_value_stats = {
-            10: {"request_throughput_avg": {"mean": 100.0}},
-            20: {"request_throughput_avg": {"mean": 180.0}},
+        combo1 = ParameterCombination({"concurrency": 10})
+        combo2 = ParameterCombination({"concurrency": 20})
+        per_combination_stats = {
+            combo1: {"request_throughput_avg": {"mean": 100.0}},
+            combo2: {"request_throughput_avg": {"mean": 180.0}},
         }
+        sweep_parameters = [{"name": "concurrency", "values": [10, 20]}]
 
-        result = SweepAggregation.compute(per_value_stats, [10, 20])
+        result = SweepAggregation.compute(per_combination_stats, sweep_parameters)
 
         # Should have best_throughput
         assert "best_throughput" in result["best_configurations"]
-        assert result["best_configurations"]["best_throughput"]["value"] == 20
+        assert result["best_configurations"]["best_throughput"]["parameters"] == {
+            "concurrency": 20
+        }
 
         # Should NOT have best_latency_p99
         assert "best_latency_p99" not in result["best_configurations"]
@@ -1741,16 +1164,21 @@ class TestBestConfigurations:
         """Test that only best_latency_p99 is included when throughput metric is missing."""
         from aiperf.orchestrator.aggregation import SweepAggregation
 
-        per_value_stats = {
-            10: {"ttft_p99_ms": {"mean": 50.0}},
-            20: {"ttft_p99_ms": {"mean": 60.0}},
+        combo1 = ParameterCombination({"concurrency": 10})
+        combo2 = ParameterCombination({"concurrency": 20})
+        per_combination_stats = {
+            combo1: {"ttft_p99_ms": {"mean": 50.0}},
+            combo2: {"ttft_p99_ms": {"mean": 60.0}},
         }
+        sweep_parameters = [{"name": "concurrency", "values": [10, 20]}]
 
-        result = SweepAggregation.compute(per_value_stats, [10, 20])
+        result = SweepAggregation.compute(per_combination_stats, sweep_parameters)
 
         # Should have best_latency_p99
         assert "best_latency_p99" in result["best_configurations"]
-        assert result["best_configurations"]["best_latency_p99"]["value"] == 10
+        assert result["best_configurations"]["best_latency_p99"]["parameters"] == {
+            "concurrency": 10
+        }
 
         # Should NOT have best_throughput
         assert "best_throughput" not in result["best_configurations"]
@@ -1759,18 +1187,21 @@ class TestBestConfigurations:
         """Test that best configurations handles case where metric is missing in some values."""
         from aiperf.orchestrator.aggregation import SweepAggregation
 
-        per_value_stats = {
-            10: {
+        combo1 = ParameterCombination({"concurrency": 10})
+        combo2 = ParameterCombination({"concurrency": 20})
+        per_combination_stats = {
+            combo1: {
                 "request_throughput_avg": {"mean": 100.0},
                 "ttft_p99_ms": {"mean": 50.0},
             },
-            20: {
+            combo2: {
                 "request_throughput_avg": {"mean": 180.0},
                 # Missing ttft_p99_ms
             },
         }
+        sweep_parameters = [{"name": "concurrency", "values": [10, 20]}]
 
-        result = SweepAggregation.compute(per_value_stats, [10, 20])
+        result = SweepAggregation.compute(per_combination_stats, sweep_parameters)
 
         # Should have best_throughput (present in all)
         assert "best_throughput" in result["best_configurations"]
@@ -1782,134 +1213,86 @@ class TestBestConfigurations:
         """Test best configurations with single sweep value."""
         from aiperf.orchestrator.aggregation import SweepAggregation
 
-        per_value_stats = {
-            10: {
+        combo = ParameterCombination({"concurrency": 10})
+        per_combination_stats = {
+            combo: {
                 "request_throughput_avg": {"mean": 100.0},
                 "ttft_p99_ms": {"mean": 50.0},
             },
         }
+        sweep_parameters = [{"name": "concurrency", "values": [10]}]
 
-        result = SweepAggregation.compute(per_value_stats, [10])
+        result = SweepAggregation.compute(per_combination_stats, sweep_parameters)
 
         # Single value is best for both
-        assert result["best_configurations"]["best_throughput"]["value"] == 10
-        assert result["best_configurations"]["best_latency_p99"]["value"] == 10
-
-    def test_best_configurations_with_equal_values(self):
-        """Test best configurations when multiple values have same metric."""
-        from aiperf.orchestrator.aggregation import SweepAggregation
-
-        per_value_stats = {
-            10: {"request_throughput_avg": {"mean": 100.0}},
-            20: {"request_throughput_avg": {"mean": 100.0}},  # Equal
-            30: {"request_throughput_avg": {"mean": 100.0}},  # Equal
+        assert result["best_configurations"]["best_throughput"]["parameters"] == {
+            "concurrency": 10
+        }
+        assert result["best_configurations"]["best_latency_p99"]["parameters"] == {
+            "concurrency": 10
         }
 
-        result = SweepAggregation.compute(per_value_stats, [10, 20, 30])
-
-        # Should pick one (implementation detail: max() picks first occurrence)
-        assert result["best_configurations"]["best_throughput"]["value"] in [10, 20, 30]
-        assert result["best_configurations"]["best_throughput"]["metric"] == 100.0
-
     def test_best_configurations_structure(self):
-        """Test that best configurations have correct structure with value, metric, and unit."""
+        """Test that best configurations have correct structure with parameters, metric, and unit."""
         from aiperf.orchestrator.aggregation import SweepAggregation
 
-        per_value_stats = {
-            10: {
+        combo1 = ParameterCombination({"concurrency": 10})
+        combo2 = ParameterCombination({"concurrency": 20})
+        per_combination_stats = {
+            combo1: {
                 "request_throughput_avg": {"mean": 100.0, "unit": "requests/sec"},
                 "ttft_p99_ms": {"mean": 50.0, "unit": "ms"},
             },
-            20: {
+            combo2: {
                 "request_throughput_avg": {"mean": 180.0, "unit": "requests/sec"},
                 "ttft_p99_ms": {"mean": 60.0, "unit": "ms"},
             },
         }
+        sweep_parameters = [{"name": "concurrency", "values": [10, 20]}]
 
-        result = SweepAggregation.compute(per_value_stats, [10, 20])
+        result = SweepAggregation.compute(per_combination_stats, sweep_parameters)
 
         # Check structure of best_throughput
         best_throughput = result["best_configurations"]["best_throughput"]
-        assert "value" in best_throughput
+        assert "parameters" in best_throughput
         assert "metric" in best_throughput
         assert "unit" in best_throughput
-        assert isinstance(best_throughput["value"], int)
+        assert isinstance(best_throughput["parameters"], dict)
         assert isinstance(best_throughput["metric"], float)
         assert isinstance(best_throughput["unit"], str)
 
         # Check structure of best_latency_p99
         best_latency = result["best_configurations"]["best_latency_p99"]
-        assert "value" in best_latency
+        assert "parameters" in best_latency
         assert "metric" in best_latency
         assert "unit" in best_latency
-        assert isinstance(best_latency["value"], int)
+        assert isinstance(best_latency["parameters"], dict)
         assert isinstance(best_latency["metric"], float)
         assert isinstance(best_latency["unit"], str)
-
-    def test_best_configurations_with_negative_values(self):
-        """Test best configurations work with negative metric values (edge case)."""
-        from aiperf.orchestrator.aggregation import SweepAggregation
-
-        per_value_stats = {
-            10: {"custom_metric": {"mean": -100.0}},
-            20: {"custom_metric": {"mean": -50.0}},  # Highest (best for maximize)
-            30: {"custom_metric": {"mean": -150.0}},  # Lowest (best for minimize)
-        }
-
-        result = SweepAggregation.compute(per_value_stats, [10, 20, 30])
-
-        # No best configurations (custom_metric is not a key metric)
-        assert result["best_configurations"] == {}
-
-    def test_best_configurations_with_large_values(self):
-        """Test best configurations with large metric values."""
-        from aiperf.orchestrator.aggregation import SweepAggregation
-
-        per_value_stats = {
-            10: {"request_throughput_avg": {"mean": 10000.0}},
-            20: {"request_throughput_avg": {"mean": 50000.0}},
-            30: {"request_throughput_avg": {"mean": 100000.0}},  # Best
-        }
-
-        result = SweepAggregation.compute(per_value_stats, [10, 20, 30])
-
-        assert result["best_configurations"]["best_throughput"]["value"] == 30
-        assert result["best_configurations"]["best_throughput"]["metric"] == 100000.0
-
-    def test_best_configurations_with_small_differences(self):
-        """Test best configurations with very small differences in metrics."""
-        from aiperf.orchestrator.aggregation import SweepAggregation
-
-        per_value_stats = {
-            10: {"ttft_p99_ms": {"mean": 50.001}},
-            20: {"ttft_p99_ms": {"mean": 50.000}},  # Best (lowest)
-            30: {"ttft_p99_ms": {"mean": 50.002}},
-        }
-
-        result = SweepAggregation.compute(per_value_stats, [10, 20, 30])
-
-        assert result["best_configurations"]["best_latency_p99"]["value"] == 20
-        assert result["best_configurations"]["best_latency_p99"]["metric"] == 50.000
 
     def test_best_configurations_realistic_scenario(self):
         """Test best configurations with realistic sweep data."""
         from aiperf.orchestrator.aggregation import SweepAggregation
 
         # Realistic scenario: throughput increases with concurrency, latency also increases
-        per_value_stats = {
-            10: {
+        combo1 = ParameterCombination({"concurrency": 10})
+        combo2 = ParameterCombination({"concurrency": 20})
+        combo3 = ParameterCombination({"concurrency": 30})
+        combo4 = ParameterCombination({"concurrency": 40})
+        per_combination_stats = {
+            combo1: {
                 "request_throughput_avg": {"mean": 95.5, "unit": "requests/sec"},
                 "ttft_p99_ms": {"mean": 45.2, "unit": "ms"},  # Best latency
             },
-            20: {
+            combo2: {
                 "request_throughput_avg": {"mean": 175.3, "unit": "requests/sec"},
                 "ttft_p99_ms": {"mean": 52.8, "unit": "ms"},
             },
-            30: {
+            combo3: {
                 "request_throughput_avg": {"mean": 245.7, "unit": "requests/sec"},
                 "ttft_p99_ms": {"mean": 68.5, "unit": "ms"},
             },
-            40: {
+            combo4: {
                 "request_throughput_avg": {
                     "mean": 298.2,
                     "unit": "requests/sec",
@@ -1917,17 +1300,18 @@ class TestBestConfigurations:
                 "ttft_p99_ms": {"mean": 95.3, "unit": "ms"},
             },
         }
+        sweep_parameters = [{"name": "concurrency", "values": [10, 20, 30, 40]}]
 
-        result = SweepAggregation.compute(per_value_stats, [10, 20, 30, 40])
+        result = SweepAggregation.compute(per_combination_stats, sweep_parameters)
 
         # Best throughput at highest concurrency
         best_throughput = result["best_configurations"]["best_throughput"]
-        assert best_throughput["value"] == 40
+        assert best_throughput["parameters"] == {"concurrency": 40}
         assert best_throughput["metric"] == 298.2
         assert best_throughput["unit"] == "requests/sec"
 
         # Best latency at lowest concurrency
         best_latency = result["best_configurations"]["best_latency_p99"]
-        assert best_latency["value"] == 10
+        assert best_latency["parameters"] == {"concurrency": 10}
         assert best_latency["metric"] == 45.2
         assert best_latency["unit"] == "ms"

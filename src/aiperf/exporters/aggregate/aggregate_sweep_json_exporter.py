@@ -73,15 +73,14 @@ class AggregateSweepJsonExporter(AggregateBaseExporter):
 
         output["metadata"] = metadata
 
-        # Add per_value_metrics (stored in result.metrics)
-        output["per_value_metrics"] = self._result.metrics
+        # Add per_combination_metrics (stored in result.metrics)
+        output["per_combination_metrics"] = self._result.metrics
 
         # Add sweep-specific sections from metadata
         output["best_configurations"] = self._result.metadata.get(
             "best_configurations", {}
         )
         output["pareto_optimal"] = self._result.metadata.get("pareto_optimal", [])
-        output["trends"] = self._result.metadata.get("trends", {})
 
         # Serialize to JSON with indentation
         return json.dumps(output, indent=2, ensure_ascii=False)

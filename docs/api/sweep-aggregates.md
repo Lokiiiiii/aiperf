@@ -17,8 +17,9 @@ When running parameter sweeps with AIPerf (e.g., `--concurrency 10,20,30`), the 
 
 ## Output Files
 
-Sweep aggregates are written to the `sweep_aggregate/` directory within your artifacts:
+Sweep aggregates are written to different locations depending on the sweep mode:
 
+**Independent Mode** (sweep-only, no `--num-profile-runs`):
 ```text
 artifacts/
   {benchmark_name}/
@@ -26,6 +27,23 @@ artifacts/
       profile_export_aiperf_sweep.json    # Structured data for programmatic analysis
       profile_export_aiperf_sweep.csv     # Tabular format for spreadsheet analysis
 ```
+
+**Repeated Mode** (sweep with `--num-profile-runs > 1`):
+```text
+artifacts/
+  {benchmark_name}/
+    aggregate/
+      concurrency_10/                     # Per-value confidence aggregates
+        profile_export_aiperf_aggregate.json
+        profile_export_aiperf_aggregate.csv
+      concurrency_20/
+        ...
+      sweep_aggregate/                    # Cross-value sweep analysis
+        profile_export_aiperf_sweep.json
+        profile_export_aiperf_sweep.csv
+```
+
+The sweep aggregate files contain cross-value analysis including best configurations and Pareto optimal points.
 
 ---
 

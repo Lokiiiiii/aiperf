@@ -427,12 +427,9 @@ class TestSweepParamsValidation:
     def test_parameter_sweep_mode_with_single_concurrency_defaults_to_repeated(self):
         """Test that parameter_sweep_mode defaults work with single concurrency.
 
-        Note: Testing explicit user setting of this field with single concurrency
-        is complex because it requires simulating CLI behavior (cyclopts setting
-        model_fields_set). The validator correctly checks model_fields_set and
-        raises appropriate errors when the field is explicitly set by users.
-
-        This test verifies that the default value doesn't cause issues.
+        When passing fields to the LoadGeneratorConfig constructor, Pydantic
+        populates model_fields_set automatically. This test verifies that the
+        default value doesn't trigger validation errors.
         """
         config = LoadGeneratorConfig(concurrency=10)
         assert config.parameter_sweep_mode == "repeated"  # default value works
@@ -440,12 +437,9 @@ class TestSweepParamsValidation:
     def test_parameter_sweep_cooldown_with_single_concurrency_defaults_to_zero(self):
         """Test that parameter_sweep_cooldown_seconds defaults work with single concurrency.
 
-        Note: Testing explicit user setting of this field with single concurrency
-        is complex because it requires simulating CLI behavior (cyclopts setting
-        model_fields_set). The validator correctly checks model_fields_set and
-        raises appropriate errors when the field is explicitly set by users.
-
-        This test verifies that the default value doesn't cause issues.
+        When passing fields to the LoadGeneratorConfig constructor, Pydantic
+        populates model_fields_set automatically. This test verifies that the
+        default value doesn't trigger validation errors.
         """
         config = LoadGeneratorConfig(concurrency=10)
         assert config.parameter_sweep_cooldown_seconds == 0.0  # default value works
@@ -453,12 +447,9 @@ class TestSweepParamsValidation:
     def test_parameter_sweep_same_seed_with_single_concurrency_defaults_to_false(self):
         """Test that parameter_sweep_same_seed defaults work with single concurrency.
 
-        Note: Testing explicit user setting of this field with single concurrency
-        is complex because it requires simulating CLI behavior (cyclopts setting
-        model_fields_set). The validator correctly checks model_fields_set and
-        raises appropriate errors when the field is explicitly set by users.
-
-        This test verifies that the default value doesn't cause issues.
+        When passing fields to the LoadGeneratorConfig constructor, Pydantic
+        populates model_fields_set automatically. This test verifies that the
+        default value doesn't trigger validation errors.
         """
         config = LoadGeneratorConfig(concurrency=10)
         assert config.parameter_sweep_same_seed is False  # default value works

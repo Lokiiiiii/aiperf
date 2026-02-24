@@ -424,7 +424,7 @@ class TestParameterSweepSameSeedValidation:
 class TestSweepParamsValidation:
     """Test suite for parameter sweep parameter validation when not sweeping."""
 
-    def test_parameter_sweep_mode_with_single_concurrency_raises_error(self):
+    def test_parameter_sweep_mode_with_single_concurrency_defaults_to_repeated(self):
         """Test that parameter_sweep_mode defaults work with single concurrency.
 
         Note: Testing explicit user setting of this field with single concurrency
@@ -437,7 +437,7 @@ class TestSweepParamsValidation:
         config = LoadGeneratorConfig(concurrency=10)
         assert config.parameter_sweep_mode == "repeated"  # default value works
 
-    def test_parameter_sweep_cooldown_with_single_concurrency_raises_error(self):
+    def test_parameter_sweep_cooldown_with_single_concurrency_defaults_to_zero(self):
         """Test that parameter_sweep_cooldown_seconds defaults work with single concurrency.
 
         Note: Testing explicit user setting of this field with single concurrency
@@ -450,7 +450,7 @@ class TestSweepParamsValidation:
         config = LoadGeneratorConfig(concurrency=10)
         assert config.parameter_sweep_cooldown_seconds == 0.0  # default value works
 
-    def test_parameter_sweep_same_seed_with_single_concurrency_raises_error(self):
+    def test_parameter_sweep_same_seed_with_single_concurrency_defaults_to_false(self):
         """Test that parameter_sweep_same_seed defaults work with single concurrency.
 
         Note: Testing explicit user setting of this field with single concurrency

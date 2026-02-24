@@ -398,8 +398,8 @@ class MultiRunOrchestrator:
         return FixedTrialsStrategy(
             num_trials=config.loadgen.num_profile_runs,
             cooldown_seconds=config.loadgen.profile_run_cooldown_seconds,
-            auto_set_seed=True,
-            disable_warmup_after_first=True,
+            auto_set_seed=config.loadgen.set_consistent_seed,
+            disable_warmup_after_first=config.loadgen.profile_run_disable_warmup_after_first,
         )
 
     def _execute_composed(self, config: UserConfig) -> list[RunResult]:

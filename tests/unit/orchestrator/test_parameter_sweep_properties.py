@@ -94,7 +94,7 @@ class TestProperty1ConcurrencyListParsing:
         assert config.loadgen.concurrency == expected
         assert isinstance(config.loadgen.concurrency, list)
 
-    def test_single_value_remains_integer(self):
+    def test_loadgen_concurrency_single_int_assignment_preserves_int_type(self):
         """Test that single concurrency value remains as integer (backward compatible)."""
         config = make_config()
         config.loadgen.concurrency = 10
@@ -395,7 +395,7 @@ class TestProperty15CooldownApplication:
 
         assert trial_strategy.get_cooldown_seconds() == 10.0
 
-    def test_both_cooldowns_independent(self):
+    def test_get_cooldown_seconds_independent_strategies_return_respective_values(self):
         """Test that trial and sweep cooldowns are independent."""
         sweep_strategy = ParameterSweepStrategy(
             parameter_name="concurrency",
@@ -411,7 +411,7 @@ class TestProperty15CooldownApplication:
         assert sweep_strategy.get_cooldown_seconds() == 5.0
         assert trial_strategy.get_cooldown_seconds() == 10.0
 
-    def test_zero_cooldown_default(self):
+    def test_get_cooldown_seconds_no_cooldown_specified_returns_zero(self):
         """Test that cooldown defaults to zero."""
         sweep_strategy = ParameterSweepStrategy(
             parameter_name="concurrency",

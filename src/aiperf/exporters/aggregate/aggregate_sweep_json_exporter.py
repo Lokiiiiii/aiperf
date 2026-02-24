@@ -12,10 +12,9 @@ class AggregateSweepJsonExporter(AggregateBaseExporter):
 
     The sweep aggregate contains:
     - metadata: Parameter name, values, counts
-    - per_value_metrics: Metrics for each sweep value
+    - per_combination_metrics: Metrics for each parameter combination
     - best_configurations: Best values for key metrics
-    - pareto_optimal: List of Pareto optimal sweep values
-    - trends: Trend analysis for key metrics
+    - pareto_optimal: List of Pareto optimal parameter combinations
 
     Design:
     - Uses the dict returned by SweepAggregation.compute()
@@ -35,8 +34,8 @@ class AggregateSweepJsonExporter(AggregateBaseExporter):
         """Generate JSON content from sweep aggregate result.
 
         The result contains:
-        - result.metadata: Contains sweep metadata + best_configurations, pareto_optimal, trends
-        - result.metrics: Contains per_value_metrics (the actual metrics dict)
+        - result.metadata: Contains sweep metadata + best_configurations, pareto_optimal
+        - result.metrics: Contains per_combination_metrics (the actual metrics dict)
 
         Output structure:
         {
@@ -45,10 +44,9 @@ class AggregateSweepJsonExporter(AggregateBaseExporter):
             "num_successful_runs": 15,
             "failed_runs": [],
             "metadata": {...},
-            "per_value_metrics": {...},
+            "per_combination_metrics": {...},
             "best_configurations": {...},
-            "pareto_optimal": [...],
-            "trends": {...}
+            "pareto_optimal": [...]
         }
 
         Returns:

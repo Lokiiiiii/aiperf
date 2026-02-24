@@ -113,13 +113,13 @@ class MultiRunOrchestrator:
             )
 
     def _export_confidence_aggregate(
-        self, aggregate_result: Any, config: UserConfig
+        self, aggregate_result: Any, _config: UserConfig
     ) -> None:
         """Export confidence-only aggregate results.
 
         Args:
             aggregate_result: Aggregate result to export
-            config: User configuration
+            _config: User configuration (unused)
         """
         import asyncio
 
@@ -226,7 +226,7 @@ class MultiRunOrchestrator:
             return json_path, csv_path
 
         # Export all per-value aggregates concurrently
-        async def export_all_per_value():
+        async def export_all_per_value() -> list[tuple[Path, Path]]:
             """Export all per-value aggregates."""
             tasks = [
                 export_per_value(param_value, aggregate)

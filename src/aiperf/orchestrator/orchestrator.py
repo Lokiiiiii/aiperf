@@ -89,19 +89,14 @@ class MultiRunOrchestrator:
             results: List of run results from execute()
             config: User configuration used for execution
         """
-        # Aggregate results
         aggregates = self.aggregate_results(results, config)
 
         if not aggregates:
-            # No aggregation needed (e.g., sweep-only mode)
             return
 
-        # Export aggregates
         if "aggregate" in aggregates:
-            # Confidence-only mode
             self._export_confidence_aggregate(aggregates["aggregate"], config)
         elif "per_value_aggregates" in aggregates and "sweep_aggregate" in aggregates:
-            # Sweep + confidence mode
             self._export_sweep_aggregates(
                 aggregates["per_value_aggregates"],
                 aggregates["sweep_aggregate"],

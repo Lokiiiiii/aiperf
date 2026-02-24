@@ -56,6 +56,12 @@ class LoadGeneratorConfig(BaseConfig):
             validated = []
             for item in v:
                 try:
+                    # Reject non-integer floats to prevent silent truncation
+                    if isinstance(item, float) and not item.is_integer():
+                        raise ValueError(
+                            f"Invalid concurrency list element: '{item}'. "
+                            f"All values must be positive integers (>= 1)."
+                        )
                     val = int(item)
                     if val < 1:
                         raise ValueError(

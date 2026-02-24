@@ -35,6 +35,7 @@ When using `--concurrency` with a list of values, AIPerf automatically sets `--u
 
 ```bash
 # These are equivalent - simple UI is auto-selected
+```bash
 aiperf profile --concurrency 10,20,30,40 ...
 aiperf profile --concurrency 10,20,30,40 --ui simple ...
 ```
@@ -49,12 +50,18 @@ Parameter sweep mode: UI automatically set to 'simple' (use '--ui none' to disab
 **Simple UI (Default)**
 ```bash
 aiperf profile \
+```bash
+aiperf profile \
   --concurrency 10,20,30,40 \
+  --ui simple \
   ...
 ```
 Shows progress bars for each sweep value - works well with parameter sweeps.
 
 **No UI**
+```bash
+aiperf profile \
+  --concurrency 10,20,30,40 \
 ```bash
 aiperf profile \
   --concurrency 10,20,30,40 \
@@ -98,7 +105,7 @@ This runs 4 separate benchmarks with concurrency values of 10, 20, 30, and 40.
 
 When running a simple sweep without confidence runs:
 
-```
+```text
 artifacts/
   llama-3-8b-openai-chat-concurrency_sweep/
     concurrency_10/
@@ -143,7 +150,7 @@ When combining sweeps with confidence runs, you can choose between two execution
 Executes the full sweep pattern multiple times. This preserves dynamic system behavior as load changes.
 
 **Execution pattern** with `--concurrency 10,20,30 --num-profile-runs 5`:
-```
+```text
 Trial 1: [10 → 20 → 30]
 Trial 2: [10 → 20 → 30]
 Trial 3: [10 → 20 → 30]
@@ -161,7 +168,7 @@ Trial 5: [10 → 20 → 30]
 Executes all trials at each sweep value before moving to the next. This isolates each parameter value for independent measurement.
 
 **Execution pattern** with `--concurrency 10,20,30 --num-profile-runs 5`:
-```
+```text
 Value 10: [trial1, trial2, trial3, trial4, trial5]
 Value 20: [trial1, trial2, trial3, trial4, trial5]
 Value 30: [trial1, trial2, trial3, trial4, trial5]
@@ -185,7 +192,7 @@ aiperf profile \
 
 When combining sweep with confidence runs (repeated mode):
 
-```
+```text
 artifacts/
   llama-3-8b-openai-chat-concurrency_sweep/
     profile_runs/
@@ -415,7 +422,7 @@ There's no single "best" - it depends on your service level objectives (SLOs).
 
 ### Visualizing the Pareto Frontier
 
-```
+```text
 Throughput (req/s)
     ^
 260 |                    ● 40 (Pareto optimal)

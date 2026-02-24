@@ -33,22 +33,42 @@ class LoadGeneratorConfig(BaseConfig):
 
         Returns:
             - None if input is None
-            - int if input is a single integer value
-            - list[int] if input is a comma-separated string or already a list
+            - int if input is a single integer value (>= 1)
+            - list[int] if input is a comma-separated string or already a list (all >= 1)
 
         Raises:
-            ValueError: If string contains non-integer values
+            ValueError: If string contains non-integer values or values < 1
         """
         if v is None:
             return None
 
-        # Already an int - return as-is (backward compatibility)
+        # Already an int - validate and return
         if isinstance(v, int):
+            if v < 1:
+                raise ValueError(
+                    f"Invalid concurrency value: {v}. "
+                    f"Must be a positive integer (>= 1)."
+                )
             return v
 
-        # Already a list - return as-is
+        # Already a list - validate all elements and return
         if isinstance(v, list):
-            return v
+            validated = []
+            for item in v:
+                try:
+                    val = int(item)
+                    if val < 1:
+                        raise ValueError(
+                            f"Invalid concurrency value: {val}. "
+                            f"All concurrency values must be at least 1."
+                        )
+                    validated.append(val)
+                except (ValueError, TypeError) as err:
+                    raise ValueError(
+                        f"Invalid concurrency list element: '{item}'. "
+                        f"All values must be positive integers (>= 1)."
+                    ) from err
+            return validated
 
         # String input - parse comma-separated values
         if isinstance(v, str):
@@ -58,7 +78,13 @@ class LoadGeneratorConfig(BaseConfig):
             # Single value without comma - return as int
             if len(parts) == 1:
                 try:
-                    return int(parts[0])
+                    val = int(parts[0])
+                    if val < 1:
+                        raise ValueError(
+                            f"Invalid concurrency value: {val}. "
+                            f"Must be a positive integer (>= 1)."
+                        )
+                    return val
                 except ValueError as err:
                     raise ValueError(
                         f"Invalid concurrency value: '{parts[0]}'. "
@@ -68,13 +94,25 @@ class LoadGeneratorConfig(BaseConfig):
 
             # Multiple values - parse as list
             try:
-                return [int(part) for part in parts]
+                validated = []
+                for part in parts:
+                    val = int(part)
+                    if val < 1:
+                        raise ValueError(
+                            f"Invalid concurrency value: {val}. "
+                            f"All concurrency values must be at least 1."
+                        )
+                    validated.append(val)
+                return validated
             except ValueError as err:
                 # Try to identify which value failed
                 invalid_value = None
                 for part in parts:
                     try:
-                        int(part)
+                        val = int(part)
+                        if val < 1:
+                            invalid_value = part
+                            break
                     except ValueError:
                         invalid_value = part
                         break

@@ -1549,76 +1549,76 @@ class TestSweepIncompatibilitiesValidation:
 class TestConcurrencyListParsing:
     """Tests for comma-separated concurrency list parsing (Task 2.1)."""
 
-    def test_parse_single_integer_string(self):
+    def test_parse_concurrency_single_integer_string_returns_int(self):
         """Test parsing single integer string returns int (backward compatibility)."""
         config = LoadGeneratorConfig.model_validate({"concurrency": "10"})
         assert config.concurrency == 10
         assert isinstance(config.concurrency, int)
 
-    def test_parse_single_integer(self):
+    def test_parse_concurrency_single_integer_returns_int(self):
         """Test single integer value remains as int (backward compatibility)."""
         config = LoadGeneratorConfig(concurrency=10)
         assert config.concurrency == 10
         assert isinstance(config.concurrency, int)
 
-    def test_parse_comma_separated_list(self):
+    def test_parse_concurrency_comma_separated_list_returns_list(self):
         """Test parsing comma-separated string returns list of integers."""
         config = LoadGeneratorConfig.model_validate({"concurrency": "10,20,30"})
         assert config.concurrency == [10, 20, 30]
         assert isinstance(config.concurrency, list)
 
-    def test_parse_comma_separated_with_spaces(self):
+    def test_parse_concurrency_with_spaces_returns_list(self):
         """Test parsing comma-separated string with spaces."""
         config = LoadGeneratorConfig.model_validate({"concurrency": "10, 20, 30, 40"})
         assert config.concurrency == [10, 20, 30, 40]
 
-    def test_parse_comma_separated_with_extra_spaces(self):
+    def test_parse_concurrency_with_extra_spaces_returns_list(self):
         """Test parsing comma-separated string with extra whitespace."""
         config = LoadGeneratorConfig.model_validate({"concurrency": "10,  20,   30"})
         assert config.concurrency == [10, 20, 30]
 
-    def test_parse_list_of_integers(self):
+    def test_parse_concurrency_list_of_integers_returns_list(self):
         """Test that list of integers passes through unchanged."""
         config = LoadGeneratorConfig(concurrency=[10, 20, 30])
         assert config.concurrency == [10, 20, 30]
         assert isinstance(config.concurrency, list)
 
-    def test_parse_none_value(self):
+    def test_parse_concurrency_none_value_returns_none(self):
         """Test that None value is preserved."""
         config = LoadGeneratorConfig(concurrency=None)
         assert config.concurrency is None
 
-    def test_parse_invalid_string_value(self):
+    def test_parse_concurrency_invalid_string_raises_error(self):
         """Test that invalid string value raises ValueError."""
         with pytest.raises(ValidationError) as exc_info:
             LoadGeneratorConfig.model_validate({"concurrency": "abc"})
         assert "Invalid concurrency value" in str(exc_info.value)
 
-    def test_parse_invalid_list_with_non_integer(self):
+    def test_parse_concurrency_list_with_non_integer_raises_error(self):
         """Test that comma-separated list with non-integer raises ValueError."""
         with pytest.raises(ValidationError) as exc_info:
             LoadGeneratorConfig.model_validate({"concurrency": "10,abc,30"})
         assert "Invalid concurrency list" in str(exc_info.value)
 
-    def test_parse_duplicate_values_allowed(self):
+    def test_parse_concurrency_duplicate_values_allowed(self):
         """Test that duplicate values in list are allowed."""
         config = LoadGeneratorConfig.model_validate({"concurrency": "10,20,10,30"})
         assert config.concurrency == [10, 20, 10, 30]
 
-    def test_parse_empty_string_raises_error(self):
+    def test_parse_concurrency_empty_string_raises_error(self):
         """Test that empty string raises ValueError."""
         with pytest.raises(ValidationError) as exc_info:
             LoadGeneratorConfig.model_validate({"concurrency": ""})
         assert "Invalid concurrency value" in str(exc_info.value)
 
-    def test_parse_single_value_with_trailing_comma(self):
+    def test_parse_concurrency_trailing_comma_raises_error(self):
         """Test parsing single value with trailing comma."""
         # "10," splits into ["10", ""] - the empty string will cause an error
         with pytest.raises(ValidationError) as exc_info:
             LoadGeneratorConfig.model_validate({"concurrency": "10,"})
         assert "Invalid concurrency" in str(exc_info.value)
 
-    def test_validation_rejects_negative_single_value(self):
+    def test_parse_concurrency_negative_single_value_raises_error(self):
         """Test that negative single value is rejected by validation."""
         with pytest.raises(ValidationError) as exc_info:
             LoadGeneratorConfig.model_validate({"concurrency": "-5"})
@@ -1626,7 +1626,7 @@ class TestConcurrencyListParsing:
             exc_info.value
         ) or "must be >= 1" in str(exc_info.value)
 
-    def test_validation_rejects_zero_single_value(self):
+    def test_parse_concurrency_zero_single_value_raises_error(self):
         """Test that zero single value is rejected by validation."""
         with pytest.raises(ValidationError) as exc_info:
             LoadGeneratorConfig.model_validate({"concurrency": "0"})
@@ -1650,18 +1650,18 @@ class TestConcurrencyListParsing:
             exc_info.value
         ) and "must be positive integers (>= 1)" in str(exc_info.value)
 
-    def test_parse_large_values(self):
+    def test_parse_concurrency_large_values_returns_list(self):
         """Test parsing large concurrency values."""
         config = LoadGeneratorConfig.model_validate({"concurrency": "100,500,1000"})
         assert config.concurrency == [100, 500, 1000]
 
-    def test_parse_many_values(self):
+    def test_parse_concurrency_many_values_returns_list(self):
         """Test parsing many concurrency values."""
         values = ",".join(str(i * 10) for i in range(1, 11))
         config = LoadGeneratorConfig.model_validate({"concurrency": values})
         assert config.concurrency == [10, 20, 30, 40, 50, 60, 70, 80, 90, 100]
 
-    def test_integration_with_loadgen_config(self):
+    def test_parse_concurrency_integration_with_loadgen_config(self):
         """Test that concurrency list parsing works in LoadGeneratorConfig."""
         config = LoadGeneratorConfig.model_validate(
             {"concurrency": "10,20,30", "request_count": 100}

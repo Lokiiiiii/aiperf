@@ -6,6 +6,7 @@ This module tests the correctness properties defined in the parameter-sweeping d
 Each test validates a specific property to ensure the implementation meets requirements.
 """
 
+import tempfile
 from pathlib import Path
 
 import pytest
@@ -50,11 +51,14 @@ def make_run_result(label: str, concurrency: int | None = None) -> RunResult:
     if concurrency is not None:
         metadata["concurrency"] = concurrency
 
+    # Use portable temp directory instead of hardcoded /tmp
+    temp_dir = Path(tempfile.gettempdir())
+
     return RunResult(
         label=label,
         success=True,
         summary_metrics={"ttft": JsonMetricResult(unit="ms", avg=100.0)},
-        artifacts_path=Path(f"/tmp/{label}"),
+        artifacts_path=temp_dir / label,
         metadata=metadata,
     )
 

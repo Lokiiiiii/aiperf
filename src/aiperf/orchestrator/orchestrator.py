@@ -76,12 +76,8 @@ class MultiRunOrchestrator:
         Returns:
             List of RunResult, one per run executed
         """
-        # Execute runs
         results = self.execute(base_config, strategy)
-
-        # Aggregate and export results
         self._aggregate_and_export(results, base_config)
-
         return results
 
     def _aggregate_and_export(

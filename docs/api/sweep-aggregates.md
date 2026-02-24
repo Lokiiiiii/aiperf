@@ -72,9 +72,7 @@ Contains information about the sweep configuration.
         "values": [10, 20, 30, 40]
       }
     ],
-    "num_combinations": 4,
-    "best_configurations": { ... },
-    "pareto_optimal": [ ... ]
+    "num_combinations": 4
   }
 }
 ```
@@ -85,8 +83,6 @@ Contains information about the sweep configuration.
 |-------|------|-------------|
 | `sweep_parameters` | array | List of parameter definitions (name and values) |
 | `num_combinations` | int | Total number of parameter combinations tested |
-| `best_configurations` | object | Best combinations for key metrics (duplicated from top level) |
-| `pareto_optimal` | array | Pareto optimal combinations (duplicated from top level) |
 
 **Sweep Parameters Structure:**
 

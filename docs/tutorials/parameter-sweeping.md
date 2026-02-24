@@ -71,7 +71,7 @@ The dashboard UI (`--ui dashboard`) is incompatible with parameter sweep mode. I
 aiperf profile --concurrency 10,20,30,40 --ui dashboard ...
 ```
 
-```
+```text
 ValueError: Dashboard UI is not supported with parameter sweeps
 due to terminal control limitations. Please use '--ui simple' or '--ui none' instead.
 ```
@@ -237,106 +237,128 @@ The sweep aggregate output provides comprehensive analysis across all parameter 
 {
   "metadata": {
     "aggregation_type": "sweep",
-    "parameter_name": "concurrency",
-    "parameter_values": [10, 20, 30, 40],
-    "num_values": 4,
+    "sweep_parameters": [
+      {
+        "name": "concurrency",
+        "values": [10, 20, 30, 40]
+      }
+    ],
+    "num_combinations": 4,
     "num_trials_per_value": 5,
     "sweep_mode": "repeated",
     "confidence_level": 0.95
   },
-  "per_value_metrics": {
-    "10": {
-      "request_throughput_avg": {
-        "mean": 95.2,
-        "std": 3.1,
-        "min": 91.5,
-        "max": 99.0,
-        "cv": 0.033,
-        "ci_low": 91.6,
-        "ci_high": 98.8,
-        "unit": "requests/sec"
+  "per_combination_metrics": [
+    {
+      "parameters": {
+        "concurrency": 10
       },
-      "ttft_p99_ms": {
-        "mean": 125.4,
-        "std": 8.2,
-        "cv": 0.065,
-        "ci_low": 115.7,
-        "ci_high": 135.1,
-        "unit": "ms"
+      "metrics": {
+        "request_throughput_avg": {
+          "mean": 95.2,
+          "std": 3.1,
+          "min": 91.5,
+          "max": 99.0,
+          "cv": 0.033,
+          "ci_low": 91.6,
+          "ci_high": 98.8,
+          "unit": "requests/sec"
+        },
+        "ttft_p99_ms": {
+          "mean": 125.4,
+          "std": 8.2,
+          "cv": 0.065,
+          "ci_low": 115.7,
+          "ci_high": 135.1,
+          "unit": "ms"
+        }
       }
     },
-    "20": {
-      "request_throughput_avg": {
-        "mean": 175.8,
-        "std": 5.4,
-        "cv": 0.031,
-        "unit": "requests/sec"
+    {
+      "parameters": {
+        "concurrency": 20
       },
-      "ttft_p99_ms": {
-        "mean": 145.2,
-        "std": 10.1,
-        "cv": 0.070,
-        "unit": "ms"
+      "metrics": {
+        "request_throughput_avg": {
+          "mean": 175.8,
+          "std": 5.4,
+          "cv": 0.031,
+          "unit": "requests/sec"
+        },
+        "ttft_p99_ms": {
+          "mean": 145.2,
+          "std": 10.1,
+          "cv": 0.070,
+          "unit": "ms"
+        }
       }
     },
-    "30": {
-      "request_throughput_avg": {
-        "mean": 245.3,
-        "std": 8.2,
-        "cv": 0.033,
-        "unit": "requests/sec"
+    {
+      "parameters": {
+        "concurrency": 30
       },
-      "ttft_p99_ms": {
-        "mean": 180.5,
-        "std": 12.4,
-        "cv": 0.069,
-        "unit": "ms"
+      "metrics": {
+        "request_throughput_avg": {
+          "mean": 245.3,
+          "std": 8.2,
+          "cv": 0.033,
+          "unit": "requests/sec"
+        },
+        "ttft_p99_ms": {
+          "mean": 180.5,
+          "std": 12.4,
+          "cv": 0.069,
+          "unit": "ms"
+        }
       }
     },
-    "40": {
-      "request_throughput_avg": {
-        "mean": 255.1,
-        "std": 12.3,
-        "cv": 0.048,
-        "unit": "requests/sec"
+    {
+      "parameters": {
+        "concurrency": 40
       },
-      "ttft_p99_ms": {
-        "mean": 285.7,
-        "std": 18.5,
-        "cv": 0.065,
-        "unit": "ms"
+      "metrics": {
+        "request_throughput_avg": {
+          "mean": 255.1,
+          "std": 12.3,
+          "cv": 0.048,
+          "unit": "requests/sec"
+        },
+        "ttft_p99_ms": {
+          "mean": 285.7,
+          "std": 18.5,
+          "cv": 0.065,
+          "unit": "ms"
+        }
       }
     }
-  },
+  ],
   "best_configurations": {
     "best_throughput": {
-      "value": 40,
+      "parameters": {
+        "concurrency": 40
+      },
       "metric": 255.1,
       "unit": "requests/sec"
     },
     "best_latency_p99": {
-      "value": 10,
+      "parameters": {
+        "concurrency": 10
+      },
       "metric": 125.4,
       "unit": "ms"
     }
   },
-  "pareto_optimal": [10, 30, 40],
-  "trends": {
-    "request_throughput_avg": {
-      "inflection_points": [30],
-      "rate_of_change": [80.6, 69.5, 9.8]
-    },
-    "ttft_p99_ms": {
-      "inflection_points": [40],
-      "rate_of_change": [19.8, 35.3, 105.2]
-    }
-  }
+  "pareto_optimal": [
+    {"concurrency": 10},
+    {"concurrency": 30},
+    {"concurrency": 40}
+  ]
 }
 ```
 
-### Interpreting Per-Value Metrics
+### Interpreting Per-Combination Metrics
 
-For each concurrency value, you get:
+For each parameter combination, you get:
 
 - **mean**: Average across all trials (if using confidence runs)
 - **std**: Standard deviation (variability between trials)
@@ -404,79 +426,6 @@ Throughput (req/s)
 ```
 
 Points on the frontier (●) are Pareto optimal. Point 20 (○) is dominated because 30 is better on both axes.
-
-## Trend Analysis
-
-Trend analysis shows how metrics change as the parameter value increases.
-
-### Rate of Change
-
-The `rate_of_change` array shows the delta between consecutive values:
-
-**Throughput example:**
-```json
-"request_throughput_avg": {
-  "rate_of_change": [80.6, 69.5, 9.8]
-}
-```
-
-This means:
-- 10→20: +80.6 req/s (good scaling)
-- 20→30: +69.5 req/s (still scaling well)
-- 30→40: +9.8 req/s (diminishing returns)
-
-**Latency example:**
-```json
-"ttft_p99_ms": {
-  "rate_of_change": [19.8, 35.3, 105.2]
-}
-```
-
-This means:
-- 10→20: +19.8ms (modest increase)
-- 20→30: +35.3ms (moderate increase)
-- 30→40: +105.2ms (sharp increase)
-
-### Inflection Points
-
-Inflection points indicate where performance characteristics change significantly:
-
-```json
-"request_throughput_avg": {
-  "inflection_points": [30]
-}
-```
-
-This means throughput scaling changes dramatically at concurrency 30:
-- Before 30: Strong linear scaling
-- After 30: Diminishing returns (plateau)
-
-```json
-"ttft_p99_ms": {
-  "inflection_points": [40]
-}
-```
-
-This means latency behavior changes at concurrency 40:
-- Before 40: Gradual increase
-- At 40: Sharp degradation
-
-### Interpreting Trends
-
-**Throughput trends:**
-- **Increasing with diminishing returns**: Normal scaling pattern, system approaching saturation
-- **Plateau**: System at capacity, adding more concurrency won't help
-- **Decreasing**: System overloaded, too much contention
-
-**Latency trends:**
-- **Gradual increase**: Expected as load increases
-- **Sharp increase**: System approaching or exceeding capacity
-- **Inflection point**: Identifies the "knee" where latency starts degrading rapidly
-
-**Practical interpretation from example:**
-- Concurrency 30 is the inflection point for throughput (scaling slows down)
-- Concurrency 40 is the inflection point for latency (sharp degradation)
-- **Recommendation**: Operate at concurrency 30 for best balance
 
 ## Mode Comparison: Repeated vs Independent
 

@@ -350,6 +350,7 @@ The sweep aggregate output provides comprehensive analysis across all parameter 
   },
   "pareto_optimal": [
     {"concurrency": 10},
+    {"concurrency": 20},
     {"concurrency": 30},
     {"concurrency": 40}
   ]
@@ -406,6 +407,7 @@ In the example above, `"pareto_optimal": [{"concurrency": 10}, {"concurrency": 2
 All Pareto optimal points are valid choices depending on your priorities:
 
 - **Latency-sensitive applications** (real-time chat, interactive): Choose concurrency 10
+- **Moderate latency with good throughput**: Choose concurrency 20
 - **Balanced workloads** (general purpose): Choose concurrency 30
 - **Throughput-focused** (batch processing, high load): Choose concurrency 40
 
@@ -420,7 +422,7 @@ Throughput (req/s)
 240 |              ● 30 (Pareto optimal)
 220 |
 200 |
-180 |        ○ 20 (dominated by 30)
+180 |        ● 20 (Pareto optimal)
 160 |
 140 |
 120 |
@@ -430,7 +432,7 @@ Throughput (req/s)
       120   140   160   180   200   220   240   260   280
 ```
 
-Points on the frontier (●) are Pareto optimal. Point 20 (○) is dominated because 30 is better on both axes.
+All points on the frontier (●) are Pareto optimal. Each represents a different trade-off between throughput and latency.
 
 ## Mode Comparison: Repeated vs Independent
 

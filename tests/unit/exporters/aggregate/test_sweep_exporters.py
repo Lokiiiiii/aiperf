@@ -107,7 +107,7 @@ def sample_sweep_aggregate():
     # Create AggregateResult matching the structure from cli_runner
     result = AggregateResult(
         aggregation_type="sweep",
-        num_runs=15,  # 3 values × 5 trials
+        num_runs=15,  # 3 values x 5 trials
         num_successful_runs=15,
         failed_runs=[],
         metadata=sweep_data["metadata"].copy(),

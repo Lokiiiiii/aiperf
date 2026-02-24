@@ -130,7 +130,7 @@ class MultiRunOrchestrator:
         )
 
         # Determine export directory
-        aggregate_dir = self.base_dir / "profile_runs" / "aggregate"
+        aggregate_dir = self.base_dir / "aggregate"
 
         exporter_config = AggregateExporterConfig(
             result=aggregate_result,

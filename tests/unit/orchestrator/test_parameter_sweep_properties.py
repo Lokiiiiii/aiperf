@@ -205,60 +205,14 @@ class TestProperty3DuplicateValuesHandling:
 
 # =============================================================================
 # Property 8: Repeated Mode Execution Pattern
+# NOTE: Tests moved to integration tests (test_parameter_sweep.py)
 # =============================================================================
-
-
-class TestProperty8RepeatedModeExecution:
-    """Test Property 8: Repeated Mode Execution Pattern.
-
-    **Validates: Requirements 4.1, 4.2**
-
-    For any sweep with repeated mode and N trials, the execution sequence
-    should be [sweep], [sweep], ..., [sweep] (N times).
-    """
-
-    @pytest.mark.skip(reason="Requires integration test with full orchestrator setup")
-    def test_repeated_mode_executes_full_sweep_per_trial(self):
-        """Test that repeated mode executes full sweep for each trial."""
-        # This test requires full orchestrator setup with ServiceConfig
-        # Moving to integration tests
-        pass
-
-    @pytest.mark.skip(reason="Requires integration test with full orchestrator setup")
-    def test_repeated_mode_preserves_dynamic_behavior(self):
-        """Test that repeated mode preserves dynamic system behavior by executing sweep sequentially."""
-        # This test requires full orchestrator setup with ServiceConfig
-        # Moving to integration tests
-        pass
 
 
 # =============================================================================
 # Property 9: Independent Mode Execution Pattern
+# NOTE: Tests moved to integration tests (test_parameter_sweep.py)
 # =============================================================================
-
-
-class TestProperty9IndependentModeExecution:
-    """Test Property 9: Independent Mode Execution Pattern.
-
-    **Validates: Requirements 4.3, 4.4**
-
-    For any sweep with independent mode and N trials, the execution sequence
-    should be N×[value1], N×[value2], ..., N×[valueK].
-    """
-
-    @pytest.mark.skip(reason="Requires integration test with full orchestrator setup")
-    def test_independent_mode_executes_all_trials_per_value(self):
-        """Test that independent mode executes all trials at each value."""
-        # This test requires full orchestrator setup with ServiceConfig
-        # Moving to integration tests
-        pass
-
-    @pytest.mark.skip(reason="Requires integration test with full orchestrator setup")
-    def test_independent_mode_isolates_measurements(self):
-        """Test that independent mode completes all trials at one value before moving to next."""
-        # This test requires full orchestrator setup with ServiceConfig
-        # Moving to integration tests
-        pass
 
 
 # =============================================================================
@@ -469,70 +423,14 @@ class TestProperty15CooldownApplication:
 
 # =============================================================================
 # Property 16: Backward Compatibility
+# NOTE: Tests moved to integration tests (test_parameter_sweep.py)
 # =============================================================================
-
-
-class TestProperty16BackwardCompatibility:
-    """Test Property 16: Backward Compatibility.
-
-    **Validates: Requirements 6.1, 6.2, 6.4**
-
-    For any single concurrency value with confidence runs, the output structure
-    and behavior should be identical to the pre-sweep implementation.
-    """
-
-    @pytest.mark.skip(reason="Requires integration test with full orchestrator setup")
-    def test_single_value_uses_fixed_trials_strategy(self):
-        """Test that single concurrency value uses FixedTrialsStrategy."""
-        # This test requires full orchestrator setup with ServiceConfig
-        # Moving to integration tests
-        pass
-
-    @pytest.mark.skip(reason="Requires integration test with full orchestrator setup")
-    def test_single_value_no_sweep_directories(self):
-        """Test that single value doesn't create sweep-specific directories."""
-        # This test requires full orchestrator setup with ServiceConfig
-        # Moving to integration tests
-        pass
 
 
 # =============================================================================
 # Property 17: UI Mode Validation
+# NOTE: Feature not yet implemented - tests deferred
 # =============================================================================
-
-
-class TestProperty17UIModeValidation:
-    """Test Property 17: UI Mode Validation.
-
-    **Validates: Requirements 12.2**
-
-    For any sweep configuration with dashboard UI, the system should reject
-    the configuration with a clear error message.
-    """
-
-    @pytest.mark.skip(reason="UI mode validation not yet implemented in UserConfig")
-    def test_dashboard_ui_rejected_with_sweep(self):
-        """Test that dashboard UI is rejected when using parameter sweep."""
-        # UI mode validation will be implemented in a future task
-        pass
-
-    @pytest.mark.skip(reason="UI mode validation not yet implemented in UserConfig")
-    def test_simple_ui_allowed_with_sweep(self):
-        """Test that simple UI is allowed with parameter sweep."""
-        # UI mode validation will be implemented in a future task
-        pass
-
-    @pytest.mark.skip(reason="UI mode validation not yet implemented in UserConfig")
-    def test_none_ui_allowed_with_sweep(self):
-        """Test that none UI is allowed with parameter sweep."""
-        # UI mode validation will be implemented in a future task
-        pass
-
-    @pytest.mark.skip(reason="UI mode validation not yet implemented in UserConfig")
-    def test_dashboard_ui_allowed_without_sweep(self):
-        """Test that dashboard UI is allowed without parameter sweep."""
-        # UI mode validation will be implemented in a future task
-        pass
 
 
 # =============================================================================

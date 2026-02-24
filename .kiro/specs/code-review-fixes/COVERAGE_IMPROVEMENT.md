@@ -95,11 +95,13 @@ This document tracks the effort to improve test coverage for the parameter sweep
 
 ### Test Files to Create/Enhance
 
-1. **tests/unit/orchestrator/test_orchestrator_aggregation.py** (NEW)
-   - Test `_aggregate_and_export` routing logic
-   - Test `_export_confidence_aggregate`
-   - Test `_export_sweep_aggregates`
-   - Test `_export_per_value_aggregates`
+1. **tests/unit/orchestrator/test_orchestrator_aggregation.py** ✅ **COMPLETED**
+   - Test `_aggregate_and_export` routing logic ✅
+   - Test `_export_confidence_aggregate` ✅
+   - Test `_export_sweep_aggregates` ✅
+   - Test per-value aggregate export (within sweep export) ✅
+   - **Status**: All 14 tests passing
+   - **Commit**: 82932dc6 (original), verified passing
 
 2. **tests/unit/orchestrator/test_orchestrator_sweep_execution.py** (NEW)
    - Test `_execute_parameter_sweep`

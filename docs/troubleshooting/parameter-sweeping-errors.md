@@ -7,7 +7,7 @@ This guide helps you resolve common errors when using AIPerf's parameter sweepin
 ### 1. Invalid Concurrency Value
 
 **Error Message:**
-```
+```text
 Invalid concurrency value: 'abc'. Must be a positive integer (>= 1).
 Examples: --concurrency 10, --concurrency 20
 ```
@@ -28,7 +28,7 @@ aiperf --concurrency 10 ...
 ### 2. Invalid Concurrency List
 
 **Error Message:**
-```
+```text
 Invalid concurrency list: '10,abc,30'. Failed to parse value: 'abc'.
 All values must be positive integers (>= 1).
 Examples: --concurrency 10,20,30 or --concurrency 5,10,15,20
@@ -50,7 +50,7 @@ aiperf --concurrency 10,20,30 ...
 ### 3. Negative or Zero Concurrency Values
 
 **Error Message:**
-```
+```text
 Invalid concurrency values at position(s) [2]: [-5].
 All concurrency values must be at least 1 (cannot have zero or negative concurrent requests).
 Current list: [10, -5, 30].
@@ -77,7 +77,7 @@ aiperf --concurrency 1,10,20 ...
 ### 4. Using Sweep Parameters Without a Sweep
 
 **Error Message:**
-```
+```text
 --parameter-sweep-mode only applies when sweeping parameters (e.g., --concurrency 10,20,30).
 This parameter controls whether to run the full sweep repeatedly (repeated mode)
 or run all trials at each value independently (independent mode).
@@ -108,7 +108,7 @@ aiperf --concurrency 10,20,30 --parameter-sweep-mode repeated ...
 ### 5. Using Multi-Run Parameters Without Multi-Run
 
 **Error Message:**
-```
+```text
 --confidence-level only applies when running multiple trials (--num-profile-runs > 1).
 Confidence intervals require at least 2 runs to compute.
 Either remove --confidence-level or add --num-profile-runs 5 (or higher).
@@ -139,7 +139,7 @@ aiperf --concurrency 10 --num-profile-runs 5 --confidence-level 0.99 ...
 ### 6. Dashboard UI with Parameter Sweeps
 
 **Error Message:**
-```
+```text
 Dashboard UI (--ui dashboard) is not supported with parameter sweeps
 due to terminal control limitations when running multiple sequential benchmarks.
 Use --ui simple (recommended, shows progress bars) or --ui none (no UI output).
@@ -167,7 +167,7 @@ aiperf --concurrency 10,20,30 --ui none ...
 ### 7. Dashboard UI with Multi-Run
 
 **Error Message:**
-```
+```text
 Dashboard UI (--ui dashboard) is not supported with multi-run mode (--num-profile-runs > 1)
 due to terminal control limitations when running multiple sequential benchmarks.
 Use --ui simple (recommended, shows progress bars) or --ui none (no UI output).
@@ -193,7 +193,7 @@ aiperf --num-profile-runs 5 --ui none ...
 ### 8. Invalid Cooldown Duration
 
 **Error Message:**
-```
+```text
 Invalid cooldown duration: -10 seconds.
 Cooldown must be non-negative (0 or greater).
 Use 0 for no cooldown, or a positive value like 10 for a 10-second pause between runs.
@@ -218,7 +218,7 @@ aiperf --concurrency 10,20,30 --parameter-sweep-cooldown-seconds 10 ...
 ### 9. Empty Parameter Values
 
 **Error Message:**
-```
+```text
 Parameter sweep requires at least one value to test.
 Provide a comma-separated list of values: --concurrency 10,20,30.
 For a single value, use: --concurrency 10 (no comma).
@@ -233,7 +233,7 @@ For a single value, use: --concurrency 10 (no comma).
 ### 10. Insufficient Successful Runs for Aggregation
 
 **Warning Message:**
-```
+```text
 Skipping aggregate statistics for concurrency=20:
 only 1 successful run(s), need at least 2 for confidence intervals.
 Consider increasing --num-profile-runs or investigating why runs failed.

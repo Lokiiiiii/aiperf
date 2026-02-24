@@ -2,7 +2,7 @@
 # SPDX-License-Identifier: Apache-2.0
 """JSON exporter for sweep aggregate results."""
 
-import json
+import orjson
 
 from aiperf.exporters.aggregate.aggregate_base_exporter import AggregateBaseExporter
 
@@ -83,4 +83,4 @@ class AggregateSweepJsonExporter(AggregateBaseExporter):
         output["pareto_optimal"] = self._result.metadata.get("pareto_optimal", [])
 
         # Serialize to JSON with indentation
-        return json.dumps(output, indent=2, ensure_ascii=False)
+        return orjson.dumps(output, option=orjson.OPT_INDENT_2).decode("utf-8")

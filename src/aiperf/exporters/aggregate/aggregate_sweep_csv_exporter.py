@@ -157,7 +157,7 @@ class AggregateSweepCsvExporter(AggregateBaseExporter):
 
         return buf.getvalue()
 
-    def _format_number(self, value, decimals: int = 2) -> str:
+    def _format_number(self, value: float | int | None, decimals: int = 2) -> str:
         """Format a number for CSV output.
 
         Args:

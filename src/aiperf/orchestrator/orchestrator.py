@@ -584,7 +584,9 @@ class MultiRunOrchestrator:
                     {
                         "trial_index": trial_index,
                         "value_index": value_index,
-                        "concurrency": run_config.loadgen.concurrency,
+                        sweep_strategy.parameter_name: getattr(
+                            run_config.loadgen, sweep_strategy.parameter_name
+                        ),
                         "sweep_mode": "repeated",
                     }
                 )
@@ -709,7 +711,9 @@ class MultiRunOrchestrator:
                     {
                         "trial_index": trial_index,
                         "value_index": value_index,
-                        "concurrency": run_config.loadgen.concurrency,
+                        sweep_strategy.parameter_name: getattr(
+                            run_config.loadgen, sweep_strategy.parameter_name
+                        ),
                         "sweep_mode": "independent",
                     }
                 )

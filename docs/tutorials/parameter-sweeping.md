@@ -380,10 +380,14 @@ A configuration is **Pareto optimal** if no other configuration is strictly bett
 
 ### Understanding Pareto Optimality
 
-In the example above, `"pareto_optimal": [{"concurrency": 10}, {"concurrency": 30}, {"concurrency": 40}]` means:
+In the example above, `"pareto_optimal": [{"concurrency": 10}, {"concurrency": 20}, {"concurrency": 30}, {"concurrency": 40}]` means:
 
 - **Concurrency 10**: Best latency (125.4ms), but lower throughput (95.2 req/s)
   - No other config has both better latency AND better throughput
+
+- **Concurrency 20**: Good latency (145.2ms) with moderate throughput (175.8 req/s)
+  - Not dominated by any other configuration
+  - Better latency than 30 and 40, though lower throughput
 
 - **Concurrency 30**: Good balance (245.3 req/s, 180.5ms)
   - Better throughput than 10, better latency than 40
@@ -392,9 +396,10 @@ In the example above, `"pareto_optimal": [{"concurrency": 10}, {"concurrency": 3
 - **Concurrency 40**: Best throughput (255.1 req/s), but higher latency (285.7ms)
   - No other config has both better throughput AND better latency
 
-**Concurrency 20 is NOT Pareto optimal** because:
-- Concurrency 30 has both higher throughput (245.3 vs 175.8) AND similar latency (180.5 vs 145.2)
-- It's "dominated" by concurrency 30
+**Concurrency 20 is ALSO Pareto optimal** because:
+- While concurrency 30 has higher throughput (245.3 vs 175.8), it has WORSE latency (180.5 vs 145.2)
+- For a configuration to dominate another, it must be better or equal on ALL objectives
+- Since 30's latency is worse, it does not dominate 20
 
 ### Choosing from Pareto Optimal Points
 

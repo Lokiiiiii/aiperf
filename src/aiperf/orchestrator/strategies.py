@@ -15,7 +15,24 @@ logger = logging.getLogger(__name__)
 __all__ = [
     "ExecutionStrategy",
     "FixedTrialsStrategy",
+    "ParameterSweepStrategy",
 ]
+
+
+def _sanitize_label(label: str) -> str:
+    """Sanitize label to prevent path traversal attacks.
+
+    Args:
+        label: Raw label string
+
+    Returns:
+        Sanitized label safe for filesystem paths
+    """
+    # Remove any path separators and parent directory references
+    sanitized = re.sub(r"[/\\]|\.\.", "", label)
+    # Remove any other potentially dangerous characters
+    sanitized = re.sub(r'[<>:"|?*]', "", sanitized)
+    return sanitized
 
 
 class ExecutionStrategy(ABC):
@@ -162,7 +179,9 @@ class FixedTrialsStrategy(ExecutionStrategy):
         """
         if cooldown_seconds < 0:
             raise ValueError(
-                f"Invalid cooldown_seconds: {cooldown_seconds}. Must be non-negative."
+                f"Invalid cooldown duration: {cooldown_seconds} seconds. "
+                f"Cooldown must be non-negative (0 or greater). "
+                f"Use 0 for no cooldown, or a positive value like 10 for a 10-second pause between runs."
             )
 
         self.num_trials = num_trials
@@ -222,7 +241,7 @@ class FixedTrialsStrategy(ExecutionStrategy):
         return config
 
     def get_run_label(self, run_index: int) -> str:
-        """Generate zero-padded label: run_0001, run_0002, etc.
+        """Generate zero-padded label: trial_0001, trial_0002, etc.
 
         Args:
             run_index: Zero-based index of run
@@ -230,24 +249,9 @@ class FixedTrialsStrategy(ExecutionStrategy):
         Returns:
             Sanitized label safe for filesystem paths
         """
-        label = f"run_{run_index + 1:04d}"
+        label = f"trial_{run_index + 1:04d}"
         # Sanitize label to prevent path traversal
-        return self._sanitize_label(label)
-
-    def _sanitize_label(self, label: str) -> str:
-        """Sanitize label to prevent path traversal attacks.
-
-        Args:
-            label: Raw label string
-
-        Returns:
-            Sanitized label safe for filesystem paths
-        """
-        # Remove any path separators and parent directory references
-        sanitized = re.sub(r"[/\\]|\.\.", "", label)
-        # Remove any other potentially dangerous characters
-        sanitized = re.sub(r'[<>:"|?*]', "", sanitized)
-        return sanitized
+        return _sanitize_label(label)
 
     def get_cooldown_seconds(self) -> float:
         """Return configured cooldown duration."""
@@ -256,12 +260,12 @@ class FixedTrialsStrategy(ExecutionStrategy):
     def get_run_path(self, base_dir: Path, run_index: int) -> Path:
         """Build path for a run's artifacts.
 
-        For fixed trials, uses flat structure: base_dir/profile_runs/run_NNNN/
+        For fixed trials, uses flat structure: base_dir/profile_runs/trial_NNNN/
 
         Directory Structure Example:
         When base_dir is the auto-generated artifact directory:
-        artifacts/llama-3-8b-openai-chat-concurrency_10/profile_runs/run_0001/
-        artifacts/llama-3-8b-openai-chat-concurrency_10/profile_runs/run_0002/
+        artifacts/llama-3-8b-openai-chat-concurrency_10/profile_runs/trial_0001/
+        artifacts/llama-3-8b-openai-chat-concurrency_10/profile_runs/trial_0002/
         artifacts/llama-3-8b-openai-chat-concurrency_10/aggregate/
 
         The base_dir includes the auto-generated name with model, service, and stimulus:
@@ -347,3 +351,204 @@ class FixedTrialsStrategy(ExecutionStrategy):
         config = config.model_copy(deep=True)
         config.loadgen.disable_warmup()
         return config
+
+
+class ParameterSweepStrategy(ExecutionStrategy):
+    """Strategy for sweeping a single parameter across multiple values.
+
+    This strategy is COMPLETELY INDEPENDENT - it knows nothing about confidence
+    trials or FixedTrialsStrategy. It ONLY handles varying a parameter.
+
+    The orchestrator composes this with FixedTrialsStrategy when both are needed,
+    using each strategy's path generation to build nested directory structures.
+
+    Attributes:
+        parameter_name: Name of parameter to sweep (e.g., "concurrency")
+        parameter_values: List of values to test
+        cooldown_seconds: Cooldown between parameter values
+        same_seed: Use same seed for all values (default: derive different seeds)
+        auto_set_seed: Auto-set base seed if not specified
+        base_seed: Base seed for derivation (set on first get_next_config call)
+    """
+
+    DEFAULT_SEED = 42
+
+    def __init__(
+        self,
+        parameter_name: str,
+        parameter_values: list[int],
+        cooldown_seconds: float = 0.0,
+        same_seed: bool = False,
+        auto_set_seed: bool = True,
+    ) -> None:
+        """Initialize parameter sweep strategy.
+
+        Args:
+            parameter_name: Name of parameter to sweep (e.g., "concurrency")
+            parameter_values: List of values to test
+            cooldown_seconds: Cooldown between parameter values (must be >= 0)
+            same_seed: Use same seed for all values (default: derive different seeds)
+            auto_set_seed: Auto-set base seed if not specified
+
+        Raises:
+            ValueError: If cooldown_seconds < 0 or parameter_values is empty
+        """
+        if cooldown_seconds < 0:
+            raise ValueError(
+                f"Invalid cooldown duration: {cooldown_seconds} seconds. "
+                f"Cooldown must be non-negative (0 or greater). "
+                f"Use 0 for no cooldown, or a positive value like 10 for a 10-second pause between parameter values."
+            )
+        if not parameter_values:
+            raise ValueError(
+                "Parameter sweep requires at least one value to test. "
+                "Provide a comma-separated list of values: --concurrency 10,20,30. "
+                "For a single value, use: --concurrency 10 (no comma)."
+            )
+
+        self.parameter_name = parameter_name
+        self.parameter_values = parameter_values
+        self.cooldown_seconds = cooldown_seconds
+        self.same_seed = same_seed
+        self.auto_set_seed = auto_set_seed
+        self.base_seed: int | None = None
+
+    def should_continue(self, results: list[RunResult]) -> bool:
+        """Continue until all parameter values are tested.
+
+        Args:
+            results: Results from runs executed so far
+
+        Returns:
+            True if more parameter values remain, False otherwise
+        """
+        return len(results) < len(self.parameter_values)
+
+    def get_next_config(
+        self, base_config: UserConfig, results: list[RunResult]
+    ) -> UserConfig:
+        """Generate config for next parameter value.
+
+        Sets the parameter value and derives appropriate random seed.
+
+        Seed derivation logic:
+        - Base seed is determined on first call (user-specified or auto-set)
+        - If same_seed=True: all values use base_seed
+        - If same_seed=False: each value uses base_seed + value_index
+
+        Args:
+            base_config: Base benchmark configuration
+            results: Results from runs executed so far
+
+        Returns:
+            Configuration for next parameter value
+        """
+        value_index = len(results)
+        value = self.parameter_values[value_index]
+
+        # Create deep copy to avoid modifying base config
+        config = base_config.model_copy(deep=True)
+
+        # Set parameter value (now a single value, not a list)
+        setattr(config.loadgen, self.parameter_name, value)
+
+        # Clear parameter_sweep_mode since we're no longer sweeping in the subprocess
+        # The orchestrator handles the sweep at a higher level
+        config.loadgen.parameter_sweep_mode = None
+
+        # Initialize base seed on first call
+        if self.base_seed is None:
+            if config.input.random_seed is not None:
+                self.base_seed = config.input.random_seed
+            elif self.auto_set_seed:
+                self.base_seed = self.DEFAULT_SEED
+                logger.info(
+                    f"No --random-seed specified. Using default seed {self.DEFAULT_SEED} "
+                    f"for parameter sweep consistency."
+                )
+
+        # Derive seed for this value
+        if self.base_seed is not None:
+            if self.same_seed:
+                seed = self.base_seed
+                if value_index == 0:
+                    logger.info(
+                        f"Using same seed ({seed}) across all sweep values "
+                        f"(--parameter-sweep-same-seed enabled)."
+                    )
+            else:
+                seed = self.base_seed + value_index
+                if value_index == 0:
+                    logger.info(
+                        f"Deriving different seeds per sweep value from base seed {self.base_seed}."
+                    )
+            config.input.random_seed = seed
+
+        return config
+
+    def get_run_label(self, run_index: int) -> str:
+        """Generate label: concurrency_10, concurrency_20, etc.
+
+        Args:
+            run_index: Zero-based index of run
+
+        Returns:
+            Sanitized label safe for filesystem paths
+        """
+        value = self.parameter_values[run_index]
+        label = f"{self.parameter_name}_{value}"
+        # Sanitize label to prevent path traversal
+        return _sanitize_label(label)
+
+    def get_cooldown_seconds(self) -> float:
+        """Return cooldown between parameter values."""
+        return self.cooldown_seconds
+
+    def get_run_path(self, base_dir: Path, run_index: int) -> Path:
+        """Build path relative to base_dir.
+
+        Returns: base_dir/concurrency_10/
+
+        When composed, orchestrator uses this as base_dir for inner strategy.
+
+        Directory Structure Examples:
+
+        Single sweep (no composition):
+        base_dir/concurrency_10/
+        base_dir/concurrency_20/
+
+        Composed with FixedTrialsStrategy (repeated mode):
+        base_dir/profile_runs/trial_0001/concurrency_10/
+        base_dir/profile_runs/trial_0001/concurrency_20/
+
+        Composed with FixedTrialsStrategy (independent mode):
+        base_dir/concurrency_10/profile_runs/trial_0001/
+        base_dir/concurrency_20/profile_runs/trial_0001/
+
+        Args:
+            base_dir: Base artifact directory (Path)
+            run_index: Zero-based run index
+
+        Returns:
+            Path where this parameter value's artifacts should be stored
+        """
+        base_dir = Path(base_dir)
+        label = self.get_run_label(run_index)
+        return base_dir / label
+
+    def get_aggregate_path(self, base_dir: Path) -> Path:
+        """Build aggregate path relative to base_dir.
+
+        Returns: base_dir/sweep_aggregate/
+
+        This directory contains sweep-level aggregate statistics comparing
+        performance across all parameter values.
+
+        Args:
+            base_dir: Base artifact directory (Path)
+
+        Returns:
+            Path where sweep aggregate artifacts should be stored
+        """
+        base_dir = Path(base_dir)
+        return base_dir / "sweep_aggregate"

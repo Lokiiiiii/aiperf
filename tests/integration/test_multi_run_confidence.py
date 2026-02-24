@@ -44,13 +44,13 @@ class TestMultiRunConfidence:
         profile_runs_dir = temp_output_dir / "profile_runs"
         assert profile_runs_dir.exists(), "profile_runs directory should exist"
 
-        run_dirs = sorted(profile_runs_dir.glob("run_*"))
+        run_dirs = sorted(profile_runs_dir.glob("trial_*"))
         assert len(run_dirs) == 3, "Should have 3 run directories"
 
         # Verify run directory naming
-        assert run_dirs[0].name == "run_0001"
-        assert run_dirs[1].name == "run_0002"
-        assert run_dirs[2].name == "run_0003"
+        assert run_dirs[0].name == "trial_0001"
+        assert run_dirs[1].name == "trial_0002"
+        assert run_dirs[2].name == "trial_0003"
 
         # Verify each run has artifacts
         for run_dir in run_dirs:
@@ -241,7 +241,7 @@ class TestMultiRunConfidence:
 
         # Verify runs completed
         profile_runs_dir = temp_output_dir / "profile_runs"
-        run_dirs = sorted(profile_runs_dir.glob("run_*"))
+        run_dirs = sorted(profile_runs_dir.glob("trial_*"))
         assert len(run_dirs) == 2
 
     async def test_multi_run_request_rate_mode(
@@ -269,7 +269,7 @@ class TestMultiRunConfidence:
 
         # Verify runs completed
         profile_runs_dir = temp_output_dir / "profile_runs"
-        run_dirs = sorted(profile_runs_dir.glob("run_*"))
+        run_dirs = sorted(profile_runs_dir.glob("trial_*"))
         assert len(run_dirs) == 2
 
     async def test_multi_run_with_warmup(
@@ -298,7 +298,7 @@ class TestMultiRunConfidence:
 
         # Verify each run has correct request count (warmup excluded)
         profile_runs_dir = temp_output_dir / "profile_runs"
-        for run_dir in sorted(profile_runs_dir.glob("run_*")):
+        for run_dir in sorted(profile_runs_dir.glob("trial_*")):
             json_file = run_dir / "profile_export_aiperf.json"
             with open(json_file) as f:
                 run_data = json.load(f)
@@ -399,7 +399,7 @@ class TestMultiRunConfidence:
         # Verify that we have some run directories
         profile_runs_dir = temp_output_dir / "profile_runs"
         if profile_runs_dir.exists():
-            run_dirs = sorted(profile_runs_dir.glob("run_*"))
+            run_dirs = sorted(profile_runs_dir.glob("trial_*"))
             assert len(run_dirs) > 0, "Should have at least some run directories"
 
             # If aggregate was created, verify it handles failures correctly
@@ -425,7 +425,7 @@ class TestMultiRunConfidence:
                             for failed_run in agg_data["metadata"]["failed_runs"]:
                                 assert "label" in failed_run
                                 assert "error" in failed_run
-                                assert failed_run["label"].startswith("run_")
+                                assert failed_run["label"].startswith("trial_")
 
     async def test_multi_run_insufficient_successful_runs(
         self, cli: AIPerfCLI, mock_server_factory, temp_output_dir: Path
@@ -587,7 +587,7 @@ class TestMultiRunConfidence:
         # Verify run directories exist (even for failed runs)
         profile_runs_dir = temp_output_dir / "profile_runs"
         if profile_runs_dir.exists():
-            run_dirs = sorted(profile_runs_dir.glob("run_*"))
+            run_dirs = sorted(profile_runs_dir.glob("trial_*"))
 
             # We should have directories for all attempted runs
             assert len(run_dirs) > 0, "Should have run directories"

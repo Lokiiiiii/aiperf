@@ -680,13 +680,12 @@ aiperf profile \
 ```json
 {
   "metadata": {
-    "num_values": 4,
-    "num_successful_values": 3,
-    "failed_values": [
+    "num_combinations": 4,
+    "num_successful_runs": 3,
+    "failed_runs": [
       {
-        "value": 40,
-        "error": "Connection timeout after 60s",
-        "timestamp": "2025-01-15T10:30:45Z"
+        "run_index": 3,
+        "error": "Connection timeout after 60s"
       }
     ]
   }

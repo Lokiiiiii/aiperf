@@ -83,4 +83,7 @@ class AggregateSweepJsonExporter(AggregateBaseExporter):
         output["pareto_optimal"] = self._result.metadata.get("pareto_optimal", [])
 
         # Serialize to JSON with indentation
-        return orjson.dumps(output, option=orjson.OPT_INDENT_2).decode("utf-8")
+        # OPT_SERIALIZE_NUMPY handles numpy types (float64, int64, etc.)
+        return orjson.dumps(
+            output, option=orjson.OPT_INDENT_2 | orjson.OPT_SERIALIZE_NUMPY
+        ).decode("utf-8")

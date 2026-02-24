@@ -1638,17 +1638,17 @@ class TestConcurrencyListParsing:
         """Test that negative value in list is rejected by validation."""
         with pytest.raises(ValidationError) as exc_info:
             LoadGeneratorConfig.model_validate({"concurrency": "10,-5,30"})
-        assert "Invalid concurrency values" in str(
+        assert "Invalid concurrency" in str(
             exc_info.value
-        ) or "must be >= 1" in str(exc_info.value)
+        ) and "must be positive integers (>= 1)" in str(exc_info.value)
 
     def test_validation_rejects_zero_in_list(self):
         """Test that zero value in list is rejected by validation."""
         with pytest.raises(ValidationError) as exc_info:
             LoadGeneratorConfig.model_validate({"concurrency": "10,0,30"})
-        assert "Invalid concurrency values" in str(
+        assert "Invalid concurrency" in str(
             exc_info.value
-        ) or "must be >= 1" in str(exc_info.value)
+        ) and "must be positive integers (>= 1)" in str(exc_info.value)
 
     def test_parse_large_values(self):
         """Test parsing large concurrency values."""

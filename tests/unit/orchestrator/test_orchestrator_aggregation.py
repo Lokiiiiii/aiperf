@@ -73,7 +73,7 @@ class TestOrchestratorAggregation:
             # Should not raise any errors
             orchestrator._aggregate_and_export([], mock_user_config)
 
-    def test_aggregate_and_export_confidence_only_mode(
+    def test_aggregate_and_export_confidence_only_mode_calls_confidence_export(
         self,
         mock_service_config,
         mock_user_config,
@@ -81,7 +81,7 @@ class TestOrchestratorAggregation:
         sample_aggregate_result,
         tmp_path,
     ):
-        """Test _aggregate_and_export with confidence-only aggregation."""
+        """Test _aggregate_and_export with confidence-only aggregation calls confidence export."""
         orchestrator = MultiRunOrchestrator(tmp_path, mock_service_config)
 
         aggregates = {"aggregate": sample_aggregate_result}
@@ -97,7 +97,7 @@ class TestOrchestratorAggregation:
                 sample_aggregate_result, mock_user_config
             )
 
-    def test_aggregate_and_export_sweep_mode(
+    def test_aggregate_and_export_sweep_mode_calls_sweep_export(
         self,
         mock_service_config,
         mock_user_config,
@@ -105,7 +105,7 @@ class TestOrchestratorAggregation:
         sample_aggregate_result,
         tmp_path,
     ):
-        """Test _aggregate_and_export with sweep aggregation."""
+        """Test _aggregate_and_export with sweep aggregation calls sweep export."""
         orchestrator = MultiRunOrchestrator(tmp_path, mock_service_config)
 
         per_value_agg = {10: sample_aggregate_result}
@@ -441,10 +441,10 @@ class TestAggregateResults:
             ),
         ]
 
-    def test_aggregate_results_confidence_only_mode(
+    def test_aggregate_results_confidence_only_mode_returns_aggregate(
         self, mock_service_config, mock_user_config, sample_run_results, tmp_path
     ):
-        """Test aggregate_results in confidence-only mode."""
+        """Test aggregate_results in confidence-only mode returns aggregate dict."""
         orchestrator = MultiRunOrchestrator(tmp_path, mock_service_config)
 
         # Mock the aggregation computation with mutable metadata
@@ -474,8 +474,10 @@ class TestAggregateResults:
             # Verify cooldown was added to metadata
             assert "cooldown_seconds" in result["aggregate"].metadata
 
-    def test_aggregate_results_sweep_mode(self, mock_service_config, tmp_path):
-        """Test aggregate_results in sweep mode with multiple trials per value."""
+    def test_aggregate_results_sweep_mode_returns_per_value_and_sweep_aggregates(
+        self, mock_service_config, tmp_path
+    ):
+        """Test aggregate_results in sweep mode returns per-value and sweep aggregates."""
         orchestrator = MultiRunOrchestrator(tmp_path, mock_service_config)
 
         # Create config with sweep parameters (concurrency as list)

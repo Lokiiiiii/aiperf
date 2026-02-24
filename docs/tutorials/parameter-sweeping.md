@@ -217,15 +217,15 @@ artifacts/
         ...
       concurrency_40/
         ...
-      sweep_aggregate/
-        profile_export_aiperf_sweep.json      # Comparison across concurrency values
-        profile_export_aiperf_sweep.csv
+    sweep_aggregate/
+      profile_export_aiperf_sweep.json      # Comparison across concurrency values
+      profile_export_aiperf_sweep.csv
 ```
 
 **Structure explanation:**
 - `profile_runs/trial_NNNN/`: Each trial's raw results for all sweep values
 - `aggregate/concurrency_VV/`: Confidence statistics for each concurrency value across all trials
-- `aggregate/sweep_aggregate/`: Cross-value comparison and analysis
+- `sweep_aggregate/`: Cross-value comparison and analysis
 
 ## Understanding Sweep Aggregates
 
@@ -380,7 +380,7 @@ A configuration is **Pareto optimal** if no other configuration is strictly bett
 
 ### Understanding Pareto Optimality
 
-In the example above, `"pareto_optimal": [10, 30, 40]` means:
+In the example above, `"pareto_optimal": [{"concurrency": 10}, {"concurrency": 30}, {"concurrency": 40}]` means:
 
 - **Concurrency 10**: Best latency (125.4ms), but lower throughput (95.2 req/s)
   - No other config has both better latency AND better throughput
@@ -782,7 +782,7 @@ Parameter sweeping works with all AIPerf features:
 ```bash
 aiperf profile \
   --concurrency 10,20,30,40 \
-  --gpu-telemetry-url http://localhost:9400/metrics \
+  --gpu-telemetry http://localhost:9400/metrics \
   ...
 ```
 
@@ -790,7 +790,7 @@ aiperf profile \
 ```bash
 aiperf profile \
   --concurrency 10,20,30,40 \
-  --server-metrics-url http://localhost:8000/metrics \
+  --server-metrics http://localhost:8000/metrics \
   ...
 ```
 

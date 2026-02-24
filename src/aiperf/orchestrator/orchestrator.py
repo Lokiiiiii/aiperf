@@ -1042,10 +1042,12 @@ class MultiRunOrchestrator:
             sweep_aggregate = self._compute_sweep_aggregates(
                 results, per_value_aggregates, config.loadgen.confidence_level
             )
-            return {
-                "per_value_aggregates": per_value_aggregates,
-                "sweep_aggregate": sweep_aggregate,
-            }
+
+            # Only include sweep_aggregate if computation succeeded
+            result = {"per_value_aggregates": per_value_aggregates}
+            if sweep_aggregate is not None:
+                result["sweep_aggregate"] = sweep_aggregate
+            return result
 
         # Single run or insufficient data
         logger.warning("No aggregation performed: insufficient data or single run")

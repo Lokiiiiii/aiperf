@@ -480,20 +480,19 @@ class TestProperty2PBT:
     @given(
         st.lists(st.integers(min_value=1, max_value=100), min_size=0, max_size=10),
         st.integers(max_value=0),
+        st.data(),
     )
     @settings(max_examples=100)
-    def test_pbt_rejects_invalid_values(self, valid_values, invalid_value):
+    def test_pbt_rejects_invalid_values(self, valid_values, invalid_value, data):
         """Property 2: For any list containing values < 1, validation should reject.
 
         Feature: parameter-sweeping, Property 2: For any concurrency list containing
         non-integer values or values less than 1, the validation should reject the
         input with a clear error message.
         """
-        # Insert invalid value at random position
+        # Insert invalid value at random position using Hypothesis
         if valid_values:
-            import random
-
-            position = random.randint(0, len(valid_values))
+            position = data.draw(st.integers(min_value=0, max_value=len(valid_values)))
             test_values = (
                 valid_values[:position] + [invalid_value] + valid_values[position:]
             )

@@ -51,9 +51,6 @@ class AggregateSweepCsvExporter(AggregateBaseExporter):
         # Section 1: Per-combination metrics table
         per_combination_metrics = self._result.metrics
 
-        # Section 1: Per-combination metrics table
-        per_combination_metrics = self._result.metrics
-
         if per_combination_metrics:
             # Build header: param1, param2, ..., metric1_mean, metric1_std, ...
             header = param_names.copy()

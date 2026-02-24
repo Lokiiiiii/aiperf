@@ -163,9 +163,9 @@ class TestConcurrencyListValidation:
             LoadGeneratorConfig(concurrency=[10, 0, 30])
 
         error_msg = str(exc_info.value)
-        assert "Invalid concurrency values at position(s)" in error_msg
-        assert "[0]" in error_msg
-        assert "All concurrency values must be at least 1" in error_msg
+        assert "Invalid concurrency" in error_msg
+        assert "'0'" in error_msg
+        assert "All values must be positive integers (>= 1)" in error_msg
 
     def test_concurrency_list_with_negative_raises_error(self):
         """Test that concurrency list with negative value raises ValueError."""
@@ -173,9 +173,9 @@ class TestConcurrencyListValidation:
             LoadGeneratorConfig(concurrency=[10, -5, 30])
 
         error_msg = str(exc_info.value)
-        assert "Invalid concurrency values at position(s)" in error_msg
-        assert "[-5]" in error_msg
-        assert "All concurrency values must be at least 1" in error_msg
+        assert "Invalid concurrency" in error_msg
+        assert "'-5'" in error_msg
+        assert "All values must be positive integers (>= 1)" in error_msg
 
     def test_concurrency_list_with_multiple_invalid_raises_error(self):
         """Test that concurrency list with multiple invalid values raises ValueError."""
@@ -183,10 +183,10 @@ class TestConcurrencyListValidation:
             LoadGeneratorConfig(concurrency=[10, 0, -5, 30])
 
         error_msg = str(exc_info.value)
-        assert "Invalid concurrency values at position(s)" in error_msg
-        assert "0" in error_msg
-        assert "-5" in error_msg
-        assert "All concurrency values must be at least 1" in error_msg
+        assert "Invalid concurrency" in error_msg
+        # Should fail on first invalid value (0)
+        assert "'0'" in error_msg
+        assert "All values must be positive integers (>= 1)" in error_msg
 
     def test_concurrency_none_succeeds(self):
         """Test that concurrency=None succeeds (default)."""
@@ -261,8 +261,8 @@ class TestParameterSweepModeValidation:
         assert config.concurrency == [10, 20, 30]
         assert config.parameter_sweep_mode == "repeated"
 
-    def test_parameter_sweep_mode_with_single_concurrency_succeeds(self):
-        """Test that parameter_sweep_mode with single concurrency now raises error (requires list)."""
+    def test_parameter_sweep_mode_with_single_concurrency_raises_error(self):
+        """Test that parameter_sweep_mode with single concurrency raises error (requires list)."""
         # After validation improvements, sweep parameters require a concurrency list
         with pytest.raises(ValidationError) as exc_info:
             LoadGeneratorConfig(concurrency=10, parameter_sweep_mode="independent")
@@ -323,8 +323,8 @@ class TestParameterSweepCooldownValidation:
         assert config.concurrency == [10, 20, 30]
         assert config.parameter_sweep_cooldown_seconds == 5.0
 
-    def test_parameter_sweep_cooldown_with_single_concurrency_succeeds(self):
-        """Test that parameter_sweep_cooldown_seconds with single concurrency now raises error (requires list)."""
+    def test_parameter_sweep_cooldown_with_single_concurrency_raises_error(self):
+        """Test that parameter_sweep_cooldown_seconds with single concurrency raises error (requires list)."""
         # After validation improvements, sweep parameters require a concurrency list
         with pytest.raises(ValidationError) as exc_info:
             LoadGeneratorConfig(concurrency=10, parameter_sweep_cooldown_seconds=3.0)
@@ -386,8 +386,8 @@ class TestParameterSweepSameSeedValidation:
         assert config.concurrency == [10, 20, 30]
         assert config.parameter_sweep_same_seed is True
 
-    def test_parameter_sweep_same_seed_with_single_concurrency_succeeds(self):
-        """Test that parameter_sweep_same_seed with single concurrency now raises error (requires list)."""
+    def test_parameter_sweep_same_seed_with_single_concurrency_raises_error(self):
+        """Test that parameter_sweep_same_seed with single concurrency raises error (requires list)."""
         # After validation improvements, sweep parameters require a concurrency list
         with pytest.raises(ValidationError) as exc_info:
             LoadGeneratorConfig(concurrency=10, parameter_sweep_same_seed=True)

@@ -838,15 +838,3 @@ class TestProperty13PBT:
                 f"Non-Pareto point {np} is not dominated by any point: "
                 f"({np_throughput}, {np_latency})"
             )
-
-
-class TestProperty14PBT:
-    """Property-Based Tests for Property 14: Trend Pattern Detection.
-
-    **Validates: Requirements 5.9, 5.10, 5.11**
-
-    For any metric across sweep values, the trend pattern (increasing/decreasing/plateau/mixed)
-    should correctly reflect the direction of change.
-    """
-
-    # NOTE: Trend analysis tests removed - analyze_trends() function was removed from design

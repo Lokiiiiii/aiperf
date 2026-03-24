@@ -36,7 +36,7 @@ def sample_sweep_aggregate():
                         "cv": 0.052,
                         "unit": "requests/sec",
                     },
-                    "ttft_p99_ms": {
+                    "time_to_first_token_p99": {
                         "mean": 120.5,
                         "std": 8.1,
                         "min": 110.0,
@@ -57,7 +57,7 @@ def sample_sweep_aggregate():
                         "cv": 0.053,
                         "unit": "requests/sec",
                     },
-                    "ttft_p99_ms": {
+                    "time_to_first_token_p99": {
                         "mean": 135.8,
                         "std": 10.2,
                         "min": 125.0,
@@ -78,7 +78,7 @@ def sample_sweep_aggregate():
                         "cv": 0.049,
                         "unit": "requests/sec",
                     },
-                    "ttft_p99_ms": {
+                    "time_to_first_token_p99": {
                         "mean": 155.3,
                         "std": 15.5,
                         "min": 140.0,
@@ -190,7 +190,7 @@ class TestAggregateSweepJsonExporter:
 
         metrics_10 = combo_0["metrics"]
         assert "request_throughput_avg" in metrics_10
-        assert "ttft_p99_ms" in metrics_10
+        assert "time_to_first_token_p99" in metrics_10
 
         throughput = metrics_10["request_throughput_avg"]
         assert throughput["mean"] == 100.5
@@ -344,7 +344,7 @@ class TestAggregateSweepCsvExporter:
         header = rows[0]
         assert header[0] == "concurrency"  # First parameter name
         assert "request_throughput_avg_mean" in header
-        assert "ttft_p99_ms_mean" in header
+        assert "time_to_first_token_p99_mean" in header
 
         # Should have data rows for each combination
         assert rows[1][0] == "10"

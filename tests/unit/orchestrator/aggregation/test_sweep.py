@@ -43,8 +43,8 @@ class TestObjective:
 
     def test_create_minimize_objective(self):
         """Test creating an objective with MINIMIZE direction."""
-        obj = Objective("ttft_p99_ms", OptimizationDirection.MINIMIZE)
-        assert obj.metric_key == "ttft_p99_ms"
+        obj = Objective("time_to_first_token_p99", OptimizationDirection.MINIMIZE)
+        assert obj.metric_key == "time_to_first_token_p99"
         assert obj.direction == OptimizationDirection.MINIMIZE
 
     def test_objective_is_immutable(self):
@@ -62,7 +62,7 @@ class TestObjective:
     def test_objective_inequality(self):
         """Test that objectives with different values are not equal."""
         obj1 = Objective("request_throughput_avg", OptimizationDirection.MAXIMIZE)
-        obj2 = Objective("ttft_p99_ms", OptimizationDirection.MINIMIZE)
+        obj2 = Objective("time_to_first_token_p99", OptimizationDirection.MINIMIZE)
         assert obj1 != obj2
 
     def test_objective_tuple_unpacking(self):
@@ -110,9 +110,9 @@ class TestDefaultParetoObjectives:
         assert obj.direction == OptimizationDirection.MAXIMIZE
 
     def test_default_objectives_second_is_latency_minimize(self):
-        """Test that second objective is to minimize ttft_p99_ms."""
+        """Test that second objective is to minimize time_to_first_token_p99."""
         obj = DEFAULT_PARETO_OBJECTIVES[1]
-        assert obj.metric_key == "ttft_p99_ms"
+        assert obj.metric_key == "time_to_first_token_p99"
         assert obj.direction == OptimizationDirection.MINIMIZE
 
     def test_default_objectives_immutable(self):
@@ -186,7 +186,7 @@ class TestIdentifyParetoOptimal:
         per_combination_stats = {
             combo: {
                 "request_throughput_avg": {"mean": 100.0},
-                "ttft_p99_ms": {"mean": 50.0},
+                "time_to_first_token_p99": {"mean": 50.0},
             }
         }
 
@@ -205,11 +205,11 @@ class TestIdentifyParetoOptimal:
         per_combination_stats = {
             combo1: {
                 "request_throughput_avg": {"mean": 100.0},
-                "ttft_p99_ms": {"mean": 100.0},
+                "time_to_first_token_p99": {"mean": 100.0},
             },
             combo2: {
                 "request_throughput_avg": {"mean": 50.0},
-                "ttft_p99_ms": {"mean": 50.0},
+                "time_to_first_token_p99": {"mean": 50.0},
             },
         }
 
@@ -229,15 +229,15 @@ class TestIdentifyParetoOptimal:
         per_combination_stats = {
             combo1: {
                 "request_throughput_avg": {"mean": 100.0},
-                "ttft_p99_ms": {"mean": 50.0},
+                "time_to_first_token_p99": {"mean": 50.0},
             },
             combo2: {
                 "request_throughput_avg": {"mean": 150.0},
-                "ttft_p99_ms": {"mean": 40.0},
+                "time_to_first_token_p99": {"mean": 40.0},
             },
             combo3: {
                 "request_throughput_avg": {"mean": 80.0},
-                "ttft_p99_ms": {"mean": 60.0},
+                "time_to_first_token_p99": {"mean": 60.0},
             },
         }
 
@@ -256,15 +256,15 @@ class TestIdentifyParetoOptimal:
         per_combination_stats = {
             combo1: {
                 "request_throughput_avg": {"mean": 50.0},
-                "ttft_p99_ms": {"mean": 30.0},
+                "time_to_first_token_p99": {"mean": 30.0},
             },
             combo2: {
                 "request_throughput_avg": {"mean": 100.0},
-                "ttft_p99_ms": {"mean": 50.0},
+                "time_to_first_token_p99": {"mean": 50.0},
             },
             combo3: {
                 "request_throughput_avg": {"mean": 150.0},
-                "ttft_p99_ms": {"mean": 80.0},
+                "time_to_first_token_p99": {"mean": 80.0},
             },
         }
 
@@ -279,7 +279,7 @@ class TestIdentifyParetoOptimal:
         per_combination_stats = {
             combo: {
                 "request_throughput_avg": {"mean": 100.0},
-                "ttft_p99_ms": {"mean": 50.0},
+                "time_to_first_token_p99": {"mean": 50.0},
             }
         }
 
@@ -311,15 +311,17 @@ class TestIdentifyParetoOptimal:
         """Test with custom objective that only minimizes one metric."""
         from aiperf.orchestrator.aggregation import identify_pareto_optimal
 
-        objectives = [Objective("ttft_p99_ms", OptimizationDirection.MINIMIZE)]
+        objectives = [
+            Objective("time_to_first_token_p99", OptimizationDirection.MINIMIZE)
+        ]
 
         combo1 = ParameterCombination({"concurrency": 10})
         combo2 = ParameterCombination({"concurrency": 20})
         combo3 = ParameterCombination({"concurrency": 30})
         per_combination_stats = {
-            combo1: {"ttft_p99_ms": {"mean": 50.0}},
-            combo2: {"ttft_p99_ms": {"mean": 30.0}},
-            combo3: {"ttft_p99_ms": {"mean": 40.0}},
+            combo1: {"time_to_first_token_p99": {"mean": 50.0}},
+            combo2: {"time_to_first_token_p99": {"mean": 30.0}},
+            combo3: {"time_to_first_token_p99": {"mean": 40.0}},
         }
 
         result = identify_pareto_optimal(per_combination_stats, objectives)
@@ -373,11 +375,11 @@ class TestIdentifyParetoOptimal:
         per_combination_stats = {
             combo1: {
                 "request_throughput_avg": {"mean": 100.0},
-                "ttft_p99_ms": {"mean": 50.0},
+                "time_to_first_token_p99": {"mean": 50.0},
             },
             combo2: {
                 "request_throughput_avg": {"mean": 100.0},
-                "ttft_p99_ms": {"mean": 50.0},
+                "time_to_first_token_p99": {"mean": 50.0},
             },
         }
 
@@ -396,11 +398,11 @@ class TestIdentifyParetoOptimal:
         per_combination_stats = {
             combo1: {
                 "request_throughput_avg": {"mean": 100.0},
-                "ttft_p99_ms": {"mean": 50.0},
+                "time_to_first_token_p99": {"mean": 50.0},
             },
             combo2: {
                 "request_throughput_avg": {"mean": 150.0},
-                "ttft_p99_ms": {"mean": 50.0},
+                "time_to_first_token_p99": {"mean": 50.0},
             },
         }
 
@@ -418,15 +420,15 @@ class TestIdentifyParetoOptimal:
         per_combination_stats = {
             combo1: {
                 "request_throughput_avg": {"mean": 150.0},
-                "ttft_p99_ms": {"mean": 80.0},
+                "time_to_first_token_p99": {"mean": 80.0},
             },
             combo2: {
                 "request_throughput_avg": {"mean": 50.0},
-                "ttft_p99_ms": {"mean": 30.0},
+                "time_to_first_token_p99": {"mean": 30.0},
             },
             combo3: {
                 "request_throughput_avg": {"mean": 100.0},
-                "ttft_p99_ms": {"mean": 50.0},
+                "time_to_first_token_p99": {"mean": 50.0},
             },
         }
 
@@ -455,23 +457,23 @@ class TestIdentifyParetoOptimal:
         per_combination_stats = {
             combo1: {
                 "request_throughput_avg": {"mean": 50.0},
-                "ttft_p99_ms": {"mean": 100.0},
+                "time_to_first_token_p99": {"mean": 100.0},
             },  # Dominated by 2, 3, 5
             combo2: {
                 "request_throughput_avg": {"mean": 100.0},
-                "ttft_p99_ms": {"mean": 80.0},
+                "time_to_first_token_p99": {"mean": 80.0},
             },  # Dominated by 3, 5
             combo3: {
                 "request_throughput_avg": {"mean": 150.0},
-                "ttft_p99_ms": {"mean": 60.0},
+                "time_to_first_token_p99": {"mean": 60.0},
             },  # Dominated by 5
             combo4: {
                 "request_throughput_avg": {"mean": 120.0},
-                "ttft_p99_ms": {"mean": 70.0},
+                "time_to_first_token_p99": {"mean": 70.0},
             },  # Dominated by 3, 5
             combo5: {
                 "request_throughput_avg": {"mean": 200.0},
-                "ttft_p99_ms": {"mean": 50.0},
+                "time_to_first_token_p99": {"mean": 50.0},
             },  # Pareto optimal (best on both)
         }
 
@@ -492,23 +494,23 @@ class TestIdentifyParetoOptimal:
         per_combination_stats = {
             combo1: {
                 "request_throughput_avg": {"mean": 50.0},
-                "ttft_p99_ms": {"mean": 30.0},
+                "time_to_first_token_p99": {"mean": 30.0},
             },  # Low throughput, low latency - Pareto optimal
             combo2: {
                 "request_throughput_avg": {"mean": 80.0},
-                "ttft_p99_ms": {"mean": 45.0},
+                "time_to_first_token_p99": {"mean": 45.0},
             },  # Medium throughput, medium latency - Pareto optimal
             combo3: {
                 "request_throughput_avg": {"mean": 100.0},
-                "ttft_p99_ms": {"mean": 50.0},
+                "time_to_first_token_p99": {"mean": 50.0},
             },  # Good throughput, medium latency - Pareto optimal
             combo4: {
                 "request_throughput_avg": {"mean": 120.0},
-                "ttft_p99_ms": {"mean": 70.0},
+                "time_to_first_token_p99": {"mean": 70.0},
             },  # Higher throughput, higher latency - Pareto optimal
             combo5: {
                 "request_throughput_avg": {"mean": 110.0},
-                "ttft_p99_ms": {"mean": 80.0},
+                "time_to_first_token_p99": {"mean": 80.0},
             },  # Dominated by 4 (4 has higher throughput and lower latency)
         }
 
@@ -543,11 +545,11 @@ class TestIdentifyParetoOptimal:
         per_combination_stats = {
             combo1: {
                 "request_throughput_avg": {"mean": 100.0000001},
-                "ttft_p99_ms": {"mean": 50.0},
+                "time_to_first_token_p99": {"mean": 50.0},
             },
             combo2: {
                 "request_throughput_avg": {"mean": 100.0000002},  # Slightly higher
-                "ttft_p99_ms": {"mean": 50.0},
+                "time_to_first_token_p99": {"mean": 50.0},
             },
         }
 
@@ -568,7 +570,7 @@ class TestIdentifyParetoOptimal:
             combos.append(combo)
             per_combination_stats[combo] = {
                 "request_throughput_avg": {"mean": float(i * 10)},  # Increases
-                "ttft_p99_ms": {"mean": float(101 - i)},  # Decreases
+                "time_to_first_token_p99": {"mean": float(101 - i)},  # Decreases
             }
 
         result = identify_pareto_optimal(per_combination_stats)
@@ -589,23 +591,23 @@ class TestIdentifyParetoOptimal:
         per_combination_stats = {
             combo1: {
                 "request_throughput_avg": {"mean": 100.0},
-                "ttft_p99_ms": {"mean": 100.0},
+                "time_to_first_token_p99": {"mean": 100.0},
             },
             combo2: {
                 "request_throughput_avg": {"mean": 150.0},
-                "ttft_p99_ms": {"mean": 80.0},
+                "time_to_first_token_p99": {"mean": 80.0},
             },
             combo3: {
                 "request_throughput_avg": {"mean": 200.0},
-                "ttft_p99_ms": {"mean": 50.0},
+                "time_to_first_token_p99": {"mean": 50.0},
             },  # Dominates all
             combo4: {
                 "request_throughput_avg": {"mean": 120.0},
-                "ttft_p99_ms": {"mean": 90.0},
+                "time_to_first_token_p99": {"mean": 90.0},
             },
             combo5: {
                 "request_throughput_avg": {"mean": 180.0},
-                "ttft_p99_ms": {"mean": 70.0},
+                "time_to_first_token_p99": {"mean": 70.0},
             },
         }
 
@@ -693,15 +695,15 @@ class TestIdentifyParetoOptimal:
         per_combination_stats = {
             combo1: {
                 "request_throughput_avg": {"mean": 0.0},  # Zero throughput
-                "ttft_p99_ms": {"mean": 50.0},
+                "time_to_first_token_p99": {"mean": 50.0},
             },
             combo2: {
                 "request_throughput_avg": {"mean": 100.0},
-                "ttft_p99_ms": {"mean": 0.0},  # Zero latency
+                "time_to_first_token_p99": {"mean": 0.0},  # Zero latency
             },
             combo3: {
                 "request_throughput_avg": {"mean": 50.0},
-                "ttft_p99_ms": {"mean": 25.0},
+                "time_to_first_token_p99": {"mean": 25.0},
             },
         }
 
@@ -724,27 +726,27 @@ class TestIdentifyParetoOptimal:
         per_combination_stats = {
             combo1: {
                 "request_throughput_avg": {"mean": 50.0},
-                "ttft_p99_ms": {"mean": 20.0},
+                "time_to_first_token_p99": {"mean": 20.0},
             },  # Pareto optimal (best latency)
             combo2: {
                 "request_throughput_avg": {"mean": 45.0},
-                "ttft_p99_ms": {"mean": 25.0},
+                "time_to_first_token_p99": {"mean": 25.0},
             },  # Dominated by 1
             combo3: {
                 "request_throughput_avg": {"mean": 100.0},
-                "ttft_p99_ms": {"mean": 40.0},
+                "time_to_first_token_p99": {"mean": 40.0},
             },  # Pareto optimal
             combo4: {
                 "request_throughput_avg": {"mean": 95.0},
-                "ttft_p99_ms": {"mean": 45.0},
+                "time_to_first_token_p99": {"mean": 45.0},
             },  # Dominated by 3
             combo5: {
                 "request_throughput_avg": {"mean": 150.0},
-                "ttft_p99_ms": {"mean": 60.0},
+                "time_to_first_token_p99": {"mean": 60.0},
             },  # Pareto optimal
             combo6: {
                 "request_throughput_avg": {"mean": 200.0},
-                "ttft_p99_ms": {"mean": 80.0},
+                "time_to_first_token_p99": {"mean": 80.0},
             },  # Pareto optimal (best throughput)
         }
 
@@ -765,11 +767,11 @@ class TestSweepAggregation:
         per_combination_stats = {
             combo1: {
                 "request_throughput_avg": {"mean": 100.0},
-                "ttft_p99_ms": {"mean": 50.0},
+                "time_to_first_token_p99": {"mean": 50.0},
             },
             combo2: {
                 "request_throughput_avg": {"mean": 180.0},
-                "ttft_p99_ms": {"mean": 60.0},
+                "time_to_first_token_p99": {"mean": 60.0},
             },
         }
         sweep_parameters = [{"name": "concurrency", "values": [10, 20]}]
@@ -829,7 +831,7 @@ class TestSweepAggregation:
         per_combination_stats = {
             combo: {
                 "request_throughput_avg": {"mean": 100.0, "std": 5.0, "min": 95.0},
-                "ttft_p99_ms": {"mean": 50.0, "std": 2.0},
+                "time_to_first_token_p99": {"mean": 50.0, "std": 2.0},
             },
         }
         sweep_parameters = [{"name": "concurrency", "values": [10]}]
@@ -840,8 +842,8 @@ class TestSweepAggregation:
         assert metrics["request_throughput_avg"]["mean"] == 100.0
         assert metrics["request_throughput_avg"]["std"] == 5.0
         assert metrics["request_throughput_avg"]["min"] == 95.0
-        assert metrics["ttft_p99_ms"]["mean"] == 50.0
-        assert metrics["ttft_p99_ms"]["std"] == 2.0
+        assert metrics["time_to_first_token_p99"]["mean"] == 50.0
+        assert metrics["time_to_first_token_p99"]["std"] == 2.0
 
     def test_pareto_optimal_uses_identify_pareto_optimal_function(self):
         """Test that pareto_optimal section uses identify_pareto_optimal()."""
@@ -855,11 +857,11 @@ class TestSweepAggregation:
         per_combination_stats = {
             combo1: {
                 "request_throughput_avg": {"mean": 100.0},
-                "ttft_p99_ms": {"mean": 100.0},
+                "time_to_first_token_p99": {"mean": 100.0},
             },
             combo2: {
                 "request_throughput_avg": {"mean": 50.0},
-                "ttft_p99_ms": {"mean": 50.0},
+                "time_to_first_token_p99": {"mean": 50.0},
             },
         }
         sweep_parameters = [{"name": "concurrency", "values": [10, 20]}]
@@ -878,7 +880,7 @@ class TestSweepAggregation:
         per_combination_stats = {
             combo: {
                 "request_throughput_avg": {"mean": 100.0},
-                "ttft_p99_ms": {"mean": 50.0},
+                "time_to_first_token_p99": {"mean": 50.0},
             },
         }
         sweep_parameters = [{"name": "concurrency", "values": [10]}]
@@ -970,7 +972,7 @@ class TestSweepAggregation:
                     "ci_high": 106.7,
                     "unit": "requests/sec",
                 },
-                "ttft_p99_ms": {
+                "time_to_first_token_p99": {
                     "mean": 50.0,
                     "std": 2.0,
                     "unit": "ms",
@@ -1027,10 +1029,10 @@ class TestBestConfigurations:
         combo3 = ParameterCombination({"concurrency": 30})
         combo4 = ParameterCombination({"concurrency": 40})
         per_combination_stats = {
-            combo1: {"ttft_p99_ms": {"mean": 120.5}},  # Best
-            combo2: {"ttft_p99_ms": {"mean": 150.0}},
-            combo3: {"ttft_p99_ms": {"mean": 180.0}},
-            combo4: {"ttft_p99_ms": {"mean": 200.0}},
+            combo1: {"time_to_first_token_p99": {"mean": 120.5}},  # Best
+            combo2: {"time_to_first_token_p99": {"mean": 150.0}},
+            combo3: {"time_to_first_token_p99": {"mean": 180.0}},
+            combo4: {"time_to_first_token_p99": {"mean": 200.0}},
         }
         sweep_parameters = [{"name": "concurrency", "values": [10, 20, 30, 40]}]
 
@@ -1050,15 +1052,15 @@ class TestBestConfigurations:
         per_combination_stats = {
             combo1: {
                 "request_throughput_avg": {"mean": 100.0},
-                "ttft_p99_ms": {"mean": 50.0},  # Best latency
+                "time_to_first_token_p99": {"mean": 50.0},  # Best latency
             },
             combo2: {
                 "request_throughput_avg": {"mean": 180.0},
-                "ttft_p99_ms": {"mean": 60.0},
+                "time_to_first_token_p99": {"mean": 60.0},
             },
             combo3: {
                 "request_throughput_avg": {"mean": 350.2},  # Best throughput
-                "ttft_p99_ms": {"mean": 80.0},
+                "time_to_first_token_p99": {"mean": 80.0},
             },
         }
         sweep_parameters = [{"name": "concurrency", "values": [10, 20, 30]}]
@@ -1086,11 +1088,11 @@ class TestBestConfigurations:
         per_combination_stats = {
             combo1: {
                 "request_throughput_avg": {"mean": 100.0, "unit": "requests/sec"},
-                "ttft_p99_ms": {"mean": 50.0, "unit": "ms"},
+                "time_to_first_token_p99": {"mean": 50.0, "unit": "ms"},
             },
             combo2: {
                 "request_throughput_avg": {"mean": 180.0, "unit": "requests/sec"},
-                "ttft_p99_ms": {"mean": 60.0, "unit": "ms"},
+                "time_to_first_token_p99": {"mean": 60.0, "unit": "ms"},
             },
         }
         sweep_parameters = [{"name": "concurrency", "values": [10, 20]}]
@@ -1112,11 +1114,11 @@ class TestBestConfigurations:
         per_combination_stats = {
             combo1: {
                 "request_throughput_avg": {"mean": 100.0},  # No unit
-                "ttft_p99_ms": {"mean": 50.0},  # No unit
+                "time_to_first_token_p99": {"mean": 50.0},  # No unit
             },
             combo2: {
                 "request_throughput_avg": {"mean": 180.0},
-                "ttft_p99_ms": {"mean": 60.0},
+                "time_to_first_token_p99": {"mean": 60.0},
             },
         }
         sweep_parameters = [{"name": "concurrency", "values": [10, 20]}]
@@ -1167,8 +1169,8 @@ class TestBestConfigurations:
         combo1 = ParameterCombination({"concurrency": 10})
         combo2 = ParameterCombination({"concurrency": 20})
         per_combination_stats = {
-            combo1: {"ttft_p99_ms": {"mean": 50.0}},
-            combo2: {"ttft_p99_ms": {"mean": 60.0}},
+            combo1: {"time_to_first_token_p99": {"mean": 50.0}},
+            combo2: {"time_to_first_token_p99": {"mean": 60.0}},
         }
         sweep_parameters = [{"name": "concurrency", "values": [10, 20]}]
 
@@ -1192,11 +1194,11 @@ class TestBestConfigurations:
         per_combination_stats = {
             combo1: {
                 "request_throughput_avg": {"mean": 100.0},
-                "ttft_p99_ms": {"mean": 50.0},
+                "time_to_first_token_p99": {"mean": 50.0},
             },
             combo2: {
                 "request_throughput_avg": {"mean": 180.0},
-                # Missing ttft_p99_ms
+                # Missing time_to_first_token_p99
             },
         }
         sweep_parameters = [{"name": "concurrency", "values": [10, 20]}]
@@ -1217,7 +1219,7 @@ class TestBestConfigurations:
         per_combination_stats = {
             combo: {
                 "request_throughput_avg": {"mean": 100.0},
-                "ttft_p99_ms": {"mean": 50.0},
+                "time_to_first_token_p99": {"mean": 50.0},
             },
         }
         sweep_parameters = [{"name": "concurrency", "values": [10]}]
@@ -1241,11 +1243,11 @@ class TestBestConfigurations:
         per_combination_stats = {
             combo1: {
                 "request_throughput_avg": {"mean": 100.0, "unit": "requests/sec"},
-                "ttft_p99_ms": {"mean": 50.0, "unit": "ms"},
+                "time_to_first_token_p99": {"mean": 50.0, "unit": "ms"},
             },
             combo2: {
                 "request_throughput_avg": {"mean": 180.0, "unit": "requests/sec"},
-                "ttft_p99_ms": {"mean": 60.0, "unit": "ms"},
+                "time_to_first_token_p99": {"mean": 60.0, "unit": "ms"},
             },
         }
         sweep_parameters = [{"name": "concurrency", "values": [10, 20]}]
@@ -1282,22 +1284,22 @@ class TestBestConfigurations:
         per_combination_stats = {
             combo1: {
                 "request_throughput_avg": {"mean": 95.5, "unit": "requests/sec"},
-                "ttft_p99_ms": {"mean": 45.2, "unit": "ms"},  # Best latency
+                "time_to_first_token_p99": {"mean": 45.2, "unit": "ms"},  # Best latency
             },
             combo2: {
                 "request_throughput_avg": {"mean": 175.3, "unit": "requests/sec"},
-                "ttft_p99_ms": {"mean": 52.8, "unit": "ms"},
+                "time_to_first_token_p99": {"mean": 52.8, "unit": "ms"},
             },
             combo3: {
                 "request_throughput_avg": {"mean": 245.7, "unit": "requests/sec"},
-                "ttft_p99_ms": {"mean": 68.5, "unit": "ms"},
+                "time_to_first_token_p99": {"mean": 68.5, "unit": "ms"},
             },
             combo4: {
                 "request_throughput_avg": {
                     "mean": 298.2,
                     "unit": "requests/sec",
                 },  # Best throughput
-                "ttft_p99_ms": {"mean": 95.3, "unit": "ms"},
+                "time_to_first_token_p99": {"mean": 95.3, "unit": "ms"},
             },
         }
         sweep_parameters = [{"name": "concurrency", "values": [10, 20, 30, 40]}]
@@ -1315,3 +1317,87 @@ class TestBestConfigurations:
         assert best_latency["parameters"] == {"concurrency": 10}
         assert best_latency["metric"] == 45.2
         assert best_latency["unit"] == "ms"
+
+
+class TestSweepAggregationLatencyResolution:
+    """Tests for latency metric resolution in sweep aggregation."""
+
+    def test_time_to_first_token_p99_recognized_for_best_latency(self):
+        """time_to_first_token_p99 is the canonical TTFT key; sweep must recognize it."""
+        from aiperf.orchestrator.aggregation import SweepAggregation
+
+        combo1 = ParameterCombination({"concurrency": 2})
+        combo2 = ParameterCombination({"concurrency": 4})
+        per_combination_stats = {
+            combo1: {
+                "request_throughput_avg": {"mean": 100, "unit": "requests/sec"},
+                "time_to_first_token_p99": {"mean": 5.0, "unit": "ms"},
+            },
+            combo2: {
+                "request_throughput_avg": {"mean": 180, "unit": "requests/sec"},
+                "time_to_first_token_p99": {"mean": 8.0, "unit": "ms"},
+            },
+        }
+        sweep_params = [{"name": "concurrency", "values": [2, 4]}]
+
+        result = SweepAggregation.compute(per_combination_stats, sweep_params)
+
+        assert "best_latency_p99" in result["best_configurations"]
+        assert result["best_configurations"]["best_latency_p99"]["metric"] == 5.0
+
+    def test_time_to_first_token_p99_used_for_pareto(self):
+        """Pareto analysis should work with time_to_first_token_p99."""
+        from aiperf.orchestrator.aggregation import SweepAggregation
+
+        combo1 = ParameterCombination({"concurrency": 2})
+        combo2 = ParameterCombination({"concurrency": 4})
+        per_combination_stats = {
+            combo1: {
+                "request_throughput_avg": {"mean": 100, "unit": "requests/sec"},
+                "time_to_first_token_p99": {"mean": 5.0, "unit": "ms"},
+            },
+            combo2: {
+                "request_throughput_avg": {"mean": 180, "unit": "requests/sec"},
+                "time_to_first_token_p99": {"mean": 8.0, "unit": "ms"},
+            },
+        }
+        sweep_params = [{"name": "concurrency", "values": [2, 4]}]
+
+        result = SweepAggregation.compute(per_combination_stats, sweep_params)
+
+        assert len(result["pareto_optimal"]) == 2
+
+    def test_ttft_preferred_over_request_latency_when_both_present(self):
+        """When both TTFT and request_latency exist, TTFT should be used."""
+        from aiperf.orchestrator.aggregation import SweepAggregation
+
+        combo1 = ParameterCombination({"concurrency": 2})
+        per_combination_stats = {
+            combo1: {
+                "request_throughput_avg": {"mean": 100, "unit": "requests/sec"},
+                "time_to_first_token_p99": {"mean": 3.0, "unit": "ms"},
+                "request_latency_p99": {"mean": 10.0, "unit": "ms"},
+            },
+        }
+        sweep_params = [{"name": "concurrency", "values": [2]}]
+
+        result = SweepAggregation.compute(per_combination_stats, sweep_params)
+
+        assert result["best_configurations"]["best_latency_p99"]["metric"] == 3.0
+
+    def test_request_latency_p99_fallback_for_non_streaming(self):
+        """Non-streaming endpoints without TTFT fall back to request_latency_p99."""
+        from aiperf.orchestrator.aggregation import SweepAggregation
+
+        combo1 = ParameterCombination({"concurrency": 2})
+        per_combination_stats = {
+            combo1: {
+                "request_throughput_avg": {"mean": 100, "unit": "requests/sec"},
+                "request_latency_p99": {"mean": 10.0, "unit": "ms"},
+            },
+        }
+        sweep_params = [{"name": "concurrency", "values": [2]}]
+
+        result = SweepAggregation.compute(per_combination_stats, sweep_params)
+
+        assert result["best_configurations"]["best_latency_p99"]["metric"] == 10.0

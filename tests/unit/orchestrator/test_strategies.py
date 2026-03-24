@@ -65,11 +65,11 @@ class TestFixedTrialsStrategy:
     @pytest.mark.parametrize(
         "run_index,num_trials,expected",
         [
-            (0, 10, "trial_0001"),
-            (1, 10, "trial_0002"),
-            (9, 10, "trial_0010"),
-            (0, 5, "trial_0001"),
-            (4, 5, "trial_0005"),
+            (0, 10, "run_0001"),
+            (1, 10, "run_0002"),
+            (9, 10, "run_0010"),
+            (0, 5, "run_0001"),
+            (4, 5, "run_0005"),
         ],
     )
     def test_get_run_label_zero_padding_returns_expected(
@@ -187,8 +187,8 @@ class TestFixedTrialsStrategy:
         strategy = FixedTrialsStrategy(num_trials=5)
 
         # Normal labels should work fine
-        assert strategy.get_run_label(0) == "trial_0001"
-        assert strategy.get_run_label(99) == "trial_0100"
+        assert strategy.get_run_label(0) == "run_0001"
+        assert strategy.get_run_label(99) == "run_0100"
 
     def test_disable_warmup_after_first_enabled(self):
         """Test that warmup is disabled after first run when disable_warmup_after_first=True."""
@@ -296,15 +296,15 @@ class TestFixedTrialsStrategy:
 
         # Test path for first run
         path = strategy.get_run_path(base_dir, 0)
-        assert path == Path("/tmp/artifacts/profile_runs/trial_0001")
+        assert path == Path("/tmp/artifacts/profile_runs/run_0001")
 
         # Test path for second run
         path = strategy.get_run_path(base_dir, 1)
-        assert path == Path("/tmp/artifacts/profile_runs/trial_0002")
+        assert path == Path("/tmp/artifacts/profile_runs/run_0002")
 
         # Test path for tenth run
         path = strategy.get_run_path(base_dir, 9)
-        assert path == Path("/tmp/artifacts/profile_runs/trial_0010")
+        assert path == Path("/tmp/artifacts/profile_runs/run_0010")
 
     def test_get_aggregate_path(self):
         """Test get_aggregate_path returns correct path."""
@@ -331,7 +331,6 @@ class TestFixedTrialsStrategy:
             # Path should end with the label
             assert path.name == label
             assert str(path).endswith(f"profile_runs/{label}")
-
 
 
 class TestAdaptiveStrategy:
@@ -578,7 +577,7 @@ class TestAdaptiveStrategy:
 
     def test_invalid_cooldown_raises(self):
         criterion = self._make_mock_criterion()
-        with pytest.raises(ValueError, match="Invalid cooldown_seconds"):
+        with pytest.raises(ValueError, match="Invalid cooldown duration"):
             AdaptiveStrategy(criterion=criterion, cooldown_seconds=-1.0)
 
     def test_invalid_min_runs_raises(self):
@@ -1024,3 +1023,234 @@ class TestParameterSweepStrategy:
         assert strategy.get_run_path(base_dir, 0) == Path(
             "/tmp/artifacts/request_rate_10"
         )
+
+
+class TestParameterSweepStrategyAggregation:
+    """Tests for sweep-only aggregation metric key flattening."""
+
+    def _make_sweep_strategy(self):
+        from aiperf.orchestrator.strategies import ParameterSweepStrategy
+
+        return ParameterSweepStrategy(
+            parameter_name="concurrency", parameter_values=[2, 4]
+        )
+
+    def _make_result(self, value, metrics):
+        return RunResult(
+            label=f"concurrency_{value}",
+            success=True,
+            summary_metrics=metrics,
+            metadata={"concurrency": value},
+        )
+
+    def test_build_per_combination_stats_flattens_metric_keys(self):
+        """Sweep-only must flatten metric keys to match confidence format."""
+        strategy = self._make_sweep_strategy()
+        results = [
+            self._make_result(
+                2,
+                {
+                    "request_throughput": JsonMetricResult(
+                        unit="requests/sec", avg=100.0, p99=120.0
+                    ),
+                    "request_latency": JsonMetricResult(unit="ms", avg=5.0, p99=10.0),
+                },
+            ),
+        ]
+
+        stats = strategy._build_per_combination_stats(results)
+        combo_stats = list(stats.values())[0]
+
+        assert "request_throughput_avg" in combo_stats
+        assert "request_throughput_p99" in combo_stats
+        assert "request_latency_avg" in combo_stats
+        assert "request_latency_p99" in combo_stats
+        # Raw metric names should NOT be present
+        assert "request_throughput" not in combo_stats
+        assert "request_latency" not in combo_stats
+
+    def test_sweep_only_aggregate_populates_best_configurations(self):
+        """Sweep-only aggregate must populate best_configurations when metrics exist."""
+        strategy = self._make_sweep_strategy()
+        config = MagicMock(spec=UserConfig)
+        results = [
+            self._make_result(
+                2,
+                {
+                    "request_throughput": JsonMetricResult(
+                        unit="requests/sec", avg=100.0
+                    ),
+                    "request_latency": JsonMetricResult(unit="ms", avg=5.0, p99=10.0),
+                },
+            ),
+            self._make_result(
+                4,
+                {
+                    "request_throughput": JsonMetricResult(
+                        unit="requests/sec", avg=200.0
+                    ),
+                    "request_latency": JsonMetricResult(unit="ms", avg=3.0, p99=8.0),
+                },
+            ),
+        ]
+
+        agg = strategy.aggregate(results, config)
+
+        assert agg is not None
+        best = agg.metadata["best_configurations"]
+        assert "best_throughput" in best
+        assert best["best_throughput"]["parameters"] == {"concurrency": 4}
+        assert best["best_throughput"]["metric"] == 200.0
+
+    def test_sweep_only_aggregate_populates_pareto_optimal(self):
+        """Sweep-only aggregate must populate pareto_optimal when metrics exist."""
+        strategy = self._make_sweep_strategy()
+        config = MagicMock(spec=UserConfig)
+        results = [
+            self._make_result(
+                2,
+                {
+                    "request_throughput": JsonMetricResult(
+                        unit="requests/sec", avg=100.0
+                    ),
+                    "request_latency": JsonMetricResult(unit="ms", p99=5.0),
+                },
+            ),
+            self._make_result(
+                4,
+                {
+                    "request_throughput": JsonMetricResult(
+                        unit="requests/sec", avg=200.0
+                    ),
+                    "request_latency": JsonMetricResult(unit="ms", p99=10.0),
+                },
+            ),
+        ]
+
+        agg = strategy.aggregate(results, config)
+
+        assert agg is not None
+        assert len(agg.metadata["pareto_optimal"]) == 2
+
+    def test_sweep_only_with_ttft_metric(self):
+        """Sweep-only with time_to_first_token should populate best_latency."""
+        strategy = self._make_sweep_strategy()
+        config = MagicMock(spec=UserConfig)
+        results = [
+            self._make_result(
+                2,
+                {
+                    "request_throughput": JsonMetricResult(
+                        unit="requests/sec", avg=100.0
+                    ),
+                    "time_to_first_token": JsonMetricResult(unit="ms", p99=5.0),
+                },
+            ),
+            self._make_result(
+                4,
+                {
+                    "request_throughput": JsonMetricResult(
+                        unit="requests/sec", avg=200.0
+                    ),
+                    "time_to_first_token": JsonMetricResult(unit="ms", p99=10.0),
+                },
+            ),
+        ]
+
+        agg = strategy.aggregate(results, config)
+
+        assert agg is not None
+        best = agg.metadata["best_configurations"]
+        assert "best_latency_p99" in best
+        assert best["best_latency_p99"]["metric"] == 5.0
+
+
+class TestSweepConfidenceStrategyMetadata:
+    """Tests for sweep+confidence metadata reporting attempted values."""
+
+    def test_metadata_reports_attempted_values_not_surviving(self):
+        """Metadata must report all configured values, not just those that aggregated."""
+        from aiperf.orchestrator.strategies import (
+            ParameterSweepStrategy,
+            SweepConfidenceStrategy,
+            SweepMode,
+        )
+
+        sweep = ParameterSweepStrategy(
+            parameter_name="concurrency", parameter_values=[2, 4, 6]
+        )
+        confidence = FixedTrialsStrategy(num_trials=3)
+        strategy = SweepConfidenceStrategy(
+            sweep=sweep, confidence=confidence, mode=SweepMode.REPEATED
+        )
+
+        # Value 6 has only 1 successful run (needs 2 for confidence)
+        results = [
+            RunResult(
+                label="trial_0001",
+                success=True,
+                summary_metrics={
+                    "request_throughput": JsonMetricResult(
+                        unit="requests/sec", avg=100.0
+                    ),
+                },
+                metadata={"concurrency": 2, "trial_index": 0},
+            ),
+            RunResult(
+                label="trial_0002",
+                success=True,
+                summary_metrics={
+                    "request_throughput": JsonMetricResult(
+                        unit="requests/sec", avg=110.0
+                    ),
+                },
+                metadata={"concurrency": 2, "trial_index": 1},
+            ),
+            RunResult(
+                label="trial_0003",
+                success=True,
+                summary_metrics={
+                    "request_throughput": JsonMetricResult(
+                        unit="requests/sec", avg=200.0
+                    ),
+                },
+                metadata={"concurrency": 4, "trial_index": 0},
+            ),
+            RunResult(
+                label="trial_0004",
+                success=True,
+                summary_metrics={
+                    "request_throughput": JsonMetricResult(
+                        unit="requests/sec", avg=210.0
+                    ),
+                },
+                metadata={"concurrency": 4, "trial_index": 1},
+            ),
+            RunResult(
+                label="trial_0005",
+                success=True,
+                summary_metrics={
+                    "request_throughput": JsonMetricResult(
+                        unit="requests/sec", avg=300.0
+                    ),
+                },
+                metadata={"concurrency": 6, "trial_index": 0},
+            ),
+            RunResult(
+                label="trial_0006",
+                success=False,
+                summary_metrics={},
+                error="timeout",
+                metadata={"concurrency": 6, "trial_index": 1},
+            ),
+        ]
+
+        config = MagicMock()
+        config.loadgen.confidence_level = 0.95
+
+        agg = strategy.aggregate(results, config)
+
+        assert agg is not None
+        sweep_params = agg.metadata["sweep_parameters"]
+        assert sweep_params[0]["values"] == [2, 4, 6]
+        assert agg.metadata["num_combinations"] == 3

@@ -1173,11 +1173,11 @@ class TestParameterSweep:
         # artifacts/
         #   {base_name}/
         #     profile_runs/
-        #       trial_0001/
+        #       run_0001/
         #         profile_export_aiperf.json
         #         profile_export_aiperf.csv
-        #       trial_0002/
-        #       trial_0003/
+        #       run_0002/
+        #       run_0003/
         #     aggregate/
         #       profile_export_aiperf_aggregate.json
         #       profile_export_aiperf_aggregate.csv
@@ -1187,12 +1187,12 @@ class TestParameterSweep:
             "Single concurrency with confidence should have profile_runs directory"
         )
 
-        # Verify trial directories exist
-        trial_dirs = sorted(profile_runs_dir.glob("trial_*"))
+        # Verify run directories exist
+        trial_dirs = sorted(profile_runs_dir.glob("run_*"))
         assert len(trial_dirs) == 3, "Should have 3 trial directories"
-        assert trial_dirs[0].name == "trial_0001"
-        assert trial_dirs[1].name == "trial_0002"
-        assert trial_dirs[2].name == "trial_0003"
+        assert trial_dirs[0].name == "run_0001"
+        assert trial_dirs[1].name == "run_0002"
+        assert trial_dirs[2].name == "run_0003"
 
         # Verify each trial has artifacts at top level (NOT nested in concurrency_N)
         for trial_dir in trial_dirs:

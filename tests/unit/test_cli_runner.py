@@ -9,6 +9,7 @@ from unittest.mock import MagicMock, Mock, patch
 import pytest
 
 from aiperf.common.config import ServiceConfig, UserConfig
+from aiperf.orchestrator.strategies import FixedTrialsStrategy
 from aiperf.plugin.enums import UIType
 
 
@@ -63,17 +64,17 @@ class TestRunSystemController:
         service_config: ServiceConfig,
     ):
         """Test that an error is raised when explicitly using dashboard UI with multi-run."""
-        from aiperf.cli_runner import _run_multi_benchmark
+        from aiperf.cli_runner import run_system_controller
 
         # Set dashboard UI explicitly (simulate user setting it)
         service_config.ui_type = UIType.DASHBOARD
         service_config.model_fields_set.add("ui_type")
 
-        # Should raise ValueError when _run_multi_benchmark is called
+        # Should raise ValueError when run_system_controller validates UI compatibility
         with pytest.raises(
             ValueError, match="Dashboard UI.*is not supported with multi-run mode"
         ):
-            _run_multi_benchmark(user_config_multi_run, service_config)
+            run_system_controller(user_config_multi_run, service_config)
 
     @patch("aiperf.cli_runner._run_multi_benchmark")
     def test_no_warning_when_using_simple_ui_with_multi_run(
@@ -137,7 +138,7 @@ class TestRunSystemController:
         # Should raise ValueError
         with pytest.raises(
             ValueError,
-            match="Dashboard UI.*is not supported with parameter sweeps",
+            match="Dashboard UI.*is not supported with multi-run mode",
         ):
             run_system_controller(user_config_single_run, service_config)
 
@@ -297,13 +298,14 @@ class TestRunMultiBenchmark:
 
         _run_multi_benchmark(user_config_multi, service_config)
 
-        # Verify orchestrator was created and execute_and_export was called with strategy=None (auto-detect)
+        # Verify orchestrator was created and execute_and_export was called with a FixedTrialsStrategy
         mock_orchestrator_cls.assert_called_once_with(
             base_dir=tmp_path, service_config=service_config
         )
-        mock_orchestrator.execute_and_export.assert_called_once_with(
-            user_config_multi, strategy=None
-        )
+        mock_orchestrator.execute_and_export.assert_called_once()
+        call_kwargs = mock_orchestrator.execute_and_export.call_args
+        assert call_kwargs[0][0] is user_config_multi
+        assert isinstance(call_kwargs[1]["strategy"], FixedTrialsStrategy)
 
     @patch("aiperf.orchestrator.orchestrator.MultiRunOrchestrator")
     def test_multi_run_orchestrator_exception(

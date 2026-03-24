@@ -4,38 +4,42 @@
 import asyncio
 import contextlib
 import sys
-from typing import TYPE_CHECKING
 
 from aiperf.cli_utils import raise_startup_error_and_exit
 from aiperf.common.config import ServiceConfig, UserConfig
 from aiperf.gpu_telemetry.metrics_config import MetricsConfigLoader
 from aiperf.plugin.enums import ServiceType, UIType
 
-if TYPE_CHECKING:
-    pass
-
 
 def _validate_ui_compatibility(
-    user_config: UserConfig,
+    is_multi_run: bool,
+    is_sweep: bool,
     service_config: ServiceConfig,
 ) -> None:
-    """Validate UI type compatibility with parameter sweeps.
+    """Validate UI type compatibility with multi-run modes.
+
+    Dashboard UI cannot be used with parameter sweeps or multi-run confidence
+    trials because each subprocess run needs terminal control.
+
+    Args:
+        is_multi_run: True if num_profile_runs > 1
+        is_sweep: True if a sweep parameter is detected
+        service_config: Service configuration (checked for explicit ui_type)
 
     Raises:
-        ValueError: If dashboard UI is explicitly set with parameter sweeps.
+        ValueError: If dashboard UI is explicitly set with multi-run modes.
     """
-    # Check if parameter sweep is enabled
-    is_sweep = user_config.loadgen.get_sweep_parameter() is not None
+    if not (is_multi_run or is_sweep):
+        return
 
-    # Check if dashboard UI was explicitly set by user
     if (
-        is_sweep
-        and "ui_type" in service_config.model_fields_set
+        "ui_type" in service_config.model_fields_set
         and service_config.ui_type == UIType.DASHBOARD
     ):
         raise ValueError(
-            "Dashboard UI (--ui dashboard) is not supported with parameter sweeps "
-            "due to terminal control limitations when running multiple sequential benchmarks. "
+            "Dashboard UI (--ui dashboard) is not supported with multi-run mode "
+            "(--num-profile-runs > 1) or parameter sweeps due to terminal control "
+            "limitations when running multiple sequential benchmarks. "
             "Use --ui simple (recommended, shows progress bars) or --ui none (no UI output). "
             "Example: aiperf --concurrency 10,20,30 --ui simple ..."
         )
@@ -50,12 +54,11 @@ def run_system_controller(
     If num_profile_runs > 1 OR parameter sweep is detected, runs multi-run orchestration.
     Otherwise, runs a single benchmark (backward compatibility).
     """
-    # Validate dashboard UI is not used with parameter sweeps
-    _validate_ui_compatibility(user_config, service_config)
-
-    # Check if multi-run mode or parameter sweep is enabled
     is_sweep = user_config.loadgen.get_sweep_parameter() is not None
     is_multi_run = user_config.loadgen.num_profile_runs > 1
+
+    # Validate dashboard UI is not used with multi-run modes
+    _validate_ui_compatibility(is_multi_run, is_sweep, service_config)
 
     if is_multi_run or is_sweep:
         _run_multi_benchmark(user_config, service_config)
@@ -198,19 +201,8 @@ def _run_multi_benchmark(
     from aiperf.common.logging import setup_rich_logging
     from aiperf.orchestrator.orchestrator import MultiRunOrchestrator
 
-    # Validate and adjust UI type for multi-run mode
-    if (
-        "ui_type" in service_config.model_fields_set
-        and service_config.ui_type == UIType.DASHBOARD
-    ):
-        raise ValueError(
-            "Dashboard UI (--ui dashboard) is not supported with multi-run mode (--num-profile-runs > 1) "
-            "or parameter sweeps due to terminal control limitations when running multiple sequential benchmarks. "
-            "Use --ui simple (recommended, shows progress bars) or --ui none (no UI output). "
-            "Example: aiperf --concurrency 10,20,30 --ui simple ..."
-        )
-
     # Set default to simple if ui_type wasn't explicitly set
+    # (dashboard is already rejected by _validate_ui_compatibility)
     if "ui_type" not in service_config.model_fields_set:
         service_config.ui_type = UIType.SIMPLE
 
@@ -307,6 +299,11 @@ def _run_multi_benchmark(
                     "  Note: distribution mode converges when KS p-value > threshold "
                     "(higher threshold = stricter, opposite of ci_width/cv)"
                 )
+    else:
+        raise ValueError(
+            "_run_multi_benchmark requires sweep or confidence mode. "
+            "Single-run benchmarks should use _run_single_benchmark() directly."
+        )
     logger.info("=" * 80)
 
     # Create strategy (for confidence/adaptive modes; sweep uses orchestrator auto-detect)

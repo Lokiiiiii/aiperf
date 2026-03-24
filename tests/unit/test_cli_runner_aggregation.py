@@ -1,44 +1,45 @@
 # SPDX-FileCopyrightText: Copyright (c) 2025-2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
 
-"""Tests for aggregation in MultiRunOrchestrator"""
+"""Tests for strategy-level aggregation (confidence, sweep, sweep+confidence).
 
-from pathlib import Path
-from unittest.mock import Mock
+These tests validate that each strategy's aggregate() method produces correct
+results. Previously, aggregation was tested via orchestrator.aggregate_results()
+which has been removed in favor of strategy-owned polymorphism.
+"""
 
 import pytest
 
-from aiperf.common.config import ServiceConfig, UserConfig
+from aiperf.common.config import EndpointConfig, UserConfig
 from aiperf.common.models.export_models import JsonMetricResult
 from aiperf.orchestrator.models import RunResult
-from aiperf.orchestrator.orchestrator import MultiRunOrchestrator
+from aiperf.orchestrator.strategies import (
+    FixedTrialsStrategy,
+    ParameterSweepStrategy,
+    SweepConfidenceStrategy,
+    SweepMode,
+)
 
 
-class TestOrchestratorAggregation:
-    """Test aggregation methods in MultiRunOrchestrator."""
+class TestFixedTrialsAggregation:
+    """Test FixedTrialsStrategy.aggregate() for confidence-only mode."""
 
     @pytest.fixture
-    def orchestrator(self, tmp_path: Path) -> MultiRunOrchestrator:
-        """Create orchestrator instance."""
-        service_config = ServiceConfig()
-        return MultiRunOrchestrator(base_dir=tmp_path, service_config=service_config)
-
-    @pytest.fixture
-    def mock_config(self) -> UserConfig:
-        """Create mock user config."""
-        config = Mock(spec=UserConfig)
-        config.loadgen = Mock()
+    def config(self) -> UserConfig:
+        config = UserConfig(endpoint=EndpointConfig(model_names=["test-model"]))
         config.loadgen.confidence_level = 0.95
         config.loadgen.profile_run_cooldown_seconds = 10
-        config.loadgen.num_profile_runs = 2
+        config.loadgen.num_profile_runs = 3
         return config
 
     @pytest.fixture
-    def mock_results_confidence_only(self) -> list[RunResult]:
-        """Create mock results for confidence-only mode (no sweep)."""
-        results = []
-        for i in range(3):
-            result = RunResult(
+    def strategy(self) -> FixedTrialsStrategy:
+        return FixedTrialsStrategy(num_trials=3, cooldown_seconds=10.0)
+
+    @pytest.fixture
+    def successful_results(self) -> list[RunResult]:
+        return [
+            RunResult(
                 label=f"trial_{i + 1:04d}",
                 success=True,
                 summary_metrics={
@@ -52,198 +53,439 @@ class TestOrchestratorAggregation:
                 },
                 metadata={"trial_index": i},
             )
-            results.append(result)
-        return results
+            for i in range(3)
+        ]
+
+    def test_aggregate_returns_confidence_result(
+        self, strategy, successful_results, config
+    ):
+        aggregate = strategy.aggregate(successful_results, config)
+
+        assert aggregate is not None
+        assert aggregate.aggregation_type == "confidence"
+        assert aggregate.num_runs == 3
+        assert aggregate.num_successful_runs == 3
+
+    def test_aggregate_includes_cooldown_metadata(
+        self, strategy, successful_results, config
+    ):
+        aggregate = strategy.aggregate(successful_results, config)
+
+        assert aggregate is not None
+        assert "cooldown_seconds" in aggregate.metadata
+        assert aggregate.metadata["cooldown_seconds"] == 10
+
+    def test_aggregate_returns_none_with_insufficient_runs(self, strategy, config):
+        results = [
+            RunResult(
+                label="trial_0001",
+                success=True,
+                summary_metrics={
+                    "request_throughput": JsonMetricResult(
+                        unit="requests/sec", avg=100.0
+                    ),
+                },
+            )
+        ]
+        aggregate = strategy.aggregate(results, config)
+        assert aggregate is None
+
+    def test_aggregate_filters_failed_runs(self, strategy, config):
+        results = [
+            RunResult(
+                label="trial_0001",
+                success=True,
+                summary_metrics={
+                    "request_throughput": JsonMetricResult(
+                        unit="requests/sec", avg=100.0, std=5.0
+                    ),
+                },
+            ),
+            RunResult(label="trial_0002", success=False, error="timeout"),
+            RunResult(
+                label="trial_0003",
+                success=True,
+                summary_metrics={
+                    "request_throughput": JsonMetricResult(
+                        unit="requests/sec", avg=102.0, std=5.0
+                    ),
+                },
+            ),
+        ]
+        aggregate = strategy.aggregate(results, config)
+        # 2 successful runs is enough for confidence
+        assert aggregate is not None
+        assert aggregate.num_successful_runs == 2
+
+
+class TestParameterSweepAggregation:
+    """Test ParameterSweepStrategy.aggregate() for sweep-only mode."""
 
     @pytest.fixture
-    def mock_results_sweep_only(self) -> list[RunResult]:
-        """Create mock results for sweep-only mode (no confidence trials)."""
-        results = []
-        for concurrency in [10, 20, 30]:
-            result = RunResult(
-                label=f"concurrency_{concurrency}",
+    def config(self) -> UserConfig:
+        config = UserConfig(endpoint=EndpointConfig(model_names=["test-model"]))
+        config.loadgen.concurrency = [10, 20, 30]
+        return config
+
+    @pytest.fixture
+    def strategy(self) -> ParameterSweepStrategy:
+        return ParameterSweepStrategy(
+            parameter_name="concurrency", parameter_values=[10, 20, 30]
+        )
+
+    @pytest.fixture
+    def sweep_results(self) -> list[RunResult]:
+        return [
+            RunResult(
+                label=f"concurrency_{c}",
                 success=True,
                 summary_metrics={
                     "request_throughput": JsonMetricResult(
                         unit="requests/sec",
-                        avg=100.0 + concurrency,
-                        std=5.0,
+                        avg=float(c * 10),
+                    ),
+                    "time_to_first_token": JsonMetricResult(
+                        unit="ms",
+                        avg=50.0 + c,
                     ),
                 },
-                metadata={"concurrency": concurrency},
+                metadata={"concurrency": c, "value_index": i},
             )
-            results.append(result)
-        return results
+            for i, c in enumerate([10, 20, 30])
+        ]
+
+    def test_aggregate_returns_sweep_result(self, strategy, sweep_results, config):
+        aggregate = strategy.aggregate(sweep_results, config)
+
+        assert aggregate is not None
+        assert aggregate.aggregation_type == "sweep"
+        assert aggregate.num_runs == 3
+        assert aggregate.num_successful_runs == 3
+
+    def test_aggregate_includes_best_configurations(
+        self, strategy, sweep_results, config
+    ):
+        aggregate = strategy.aggregate(sweep_results, config)
+
+        assert aggregate is not None
+        assert "best_configurations" in aggregate.metadata
+        assert "pareto_optimal" in aggregate.metadata
+
+    def test_aggregate_returns_none_with_no_successful_runs(self, strategy, config):
+        results = [
+            RunResult(
+                label="concurrency_10",
+                success=False,
+                error="timeout",
+                metadata={"concurrency": 10},
+            ),
+        ]
+        aggregate = strategy.aggregate(results, config)
+        assert aggregate is None
+
+    def test_aggregate_skips_failed_runs(self, strategy, config):
+        results = [
+            RunResult(
+                label="concurrency_10",
+                success=True,
+                summary_metrics={
+                    "request_throughput": JsonMetricResult(
+                        unit="requests/sec", avg=100.0
+                    ),
+                },
+                metadata={"concurrency": 10, "value_index": 0},
+            ),
+            RunResult(
+                label="concurrency_20",
+                success=False,
+                error="timeout",
+                metadata={"concurrency": 20, "value_index": 1},
+            ),
+            RunResult(
+                label="concurrency_30",
+                success=True,
+                summary_metrics={
+                    "request_throughput": JsonMetricResult(
+                        unit="requests/sec", avg=300.0
+                    ),
+                },
+                metadata={"concurrency": 30, "value_index": 2},
+            ),
+        ]
+        aggregate = strategy.aggregate(results, config)
+        assert aggregate is not None
+        assert aggregate.num_runs == 3
+        assert aggregate.num_successful_runs == 2
+
+
+class TestSweepConfidenceAggregation:
+    """Test SweepConfidenceStrategy.aggregate() for sweep + confidence mode."""
 
     @pytest.fixture
-    def mock_results_sweep_and_confidence(self) -> list[RunResult]:
-        """Create mock results for sweep + confidence mode."""
+    def config(self) -> UserConfig:
+        config = UserConfig(endpoint=EndpointConfig(model_names=["test-model"]))
+        config.loadgen.confidence_level = 0.95
+        config.loadgen.num_profile_runs = 2
+        return config
+
+    @pytest.fixture
+    def strategy(self) -> SweepConfidenceStrategy:
+        return SweepConfidenceStrategy(
+            sweep=ParameterSweepStrategy(
+                parameter_name="concurrency", parameter_values=[10, 20, 30]
+            ),
+            confidence=FixedTrialsStrategy(num_trials=2),
+            mode=SweepMode.REPEATED,
+        )
+
+    @pytest.fixture
+    def sweep_confidence_results(self) -> list[RunResult]:
         results = []
-        for concurrency in [10, 20, 30]:
+        for c in [10, 20, 30]:
             for trial in range(2):
-                result = RunResult(
-                    label=f"concurrency_{concurrency}_trial_{trial + 1:04d}",
+                results.append(
+                    RunResult(
+                        label=f"concurrency_{c}_trial_{trial + 1:04d}",
+                        success=True,
+                        summary_metrics={
+                            "request_throughput": JsonMetricResult(
+                                unit="requests/sec",
+                                avg=100.0 + c + trial,
+                                std=5.0,
+                            ),
+                        },
+                        metadata={
+                            "concurrency": c,
+                            "trial_index": trial,
+                            "value_index": [10, 20, 30].index(c),
+                            "sweep_mode": "repeated",
+                        },
+                    )
+                )
+        return results
+
+    def test_aggregate_returns_sweep_result(
+        self, strategy, sweep_confidence_results, config
+    ):
+        aggregate = strategy.aggregate(sweep_confidence_results, config)
+
+        assert aggregate is not None
+        assert aggregate.aggregation_type == "sweep"
+
+    def test_aggregate_includes_per_value_aggregates(
+        self, strategy, sweep_confidence_results, config
+    ):
+        aggregate = strategy.aggregate(sweep_confidence_results, config)
+
+        assert aggregate is not None
+        per_value = aggregate.metadata.get("per_value_aggregates", {})
+        assert len(per_value) == 3
+        assert 10 in per_value
+        assert 20 in per_value
+        assert 30 in per_value
+
+    def test_aggregate_includes_best_configurations(
+        self, strategy, sweep_confidence_results, config
+    ):
+        aggregate = strategy.aggregate(sweep_confidence_results, config)
+
+        assert aggregate is not None
+        assert "best_configurations" in aggregate.metadata
+        assert "pareto_optimal" in aggregate.metadata
+
+    def test_aggregate_skips_values_with_insufficient_trials(self, strategy, config):
+        """Values with < 2 successful trials are skipped."""
+        results = []
+        # concurrency=10: 2 successful trials
+        for trial in range(2):
+            results.append(
+                RunResult(
+                    label=f"concurrency_10_trial_{trial + 1:04d}",
                     success=True,
                     summary_metrics={
                         "request_throughput": JsonMetricResult(
                             unit="requests/sec",
-                            avg=100.0 + concurrency + trial,
+                            avg=110.0 + trial,
                             std=5.0,
                         ),
                     },
                     metadata={
-                        "concurrency": concurrency,
+                        "concurrency": 10,
                         "trial_index": trial,
                         "sweep_mode": "repeated",
                     },
                 )
-                results.append(result)
-        return results
-
-    def test_aggregate_results_confidence_only(
-        self,
-        orchestrator: MultiRunOrchestrator,
-        mock_config: UserConfig,
-        mock_results_confidence_only: list[RunResult],
-    ):
-        """Test aggregation for confidence-only mode."""
-        aggregates = orchestrator.aggregate_results(
-            mock_results_confidence_only, mock_config
-        )
-
-        assert "aggregate" in aggregates
-        assert aggregates["aggregate"].aggregation_type == "confidence"
-        assert aggregates["aggregate"].num_runs == 3
-        assert aggregates["aggregate"].num_successful_runs == 3
-
-    def test_aggregate_results_sweep_only(
-        self,
-        orchestrator: MultiRunOrchestrator,
-        mock_config: UserConfig,
-        mock_results_sweep_only: list[RunResult],
-    ):
-        """Test aggregation for sweep-only mode (should return empty dict)."""
-        aggregates = orchestrator.aggregate_results(
-            mock_results_sweep_only, mock_config
-        )
-
-        # Sweep-only mode doesn't need aggregation
-        assert aggregates == {}
-
-    def test_aggregate_results_sweep_and_confidence(
-        self,
-        orchestrator: MultiRunOrchestrator,
-        mock_config: UserConfig,
-        mock_results_sweep_and_confidence: list[RunResult],
-    ):
-        """Test aggregation for sweep + confidence mode."""
-        aggregates = orchestrator.aggregate_results(
-            mock_results_sweep_and_confidence, mock_config
-        )
-
-        assert "per_value_aggregates" in aggregates
-        assert "sweep_aggregate" in aggregates
-
-        # Should have 3 per-value aggregates (one for each concurrency)
-        assert len(aggregates["per_value_aggregates"]) == 3
-        assert 10 in aggregates["per_value_aggregates"]
-        assert 20 in aggregates["per_value_aggregates"]
-        assert 30 in aggregates["per_value_aggregates"]
-
-        # Sweep aggregate should exist
-        assert aggregates["sweep_aggregate"].aggregation_type == "sweep"
-
-    def test_has_sweep_metadata(
-        self,
-        orchestrator: MultiRunOrchestrator,
-        mock_results_sweep_only: list[RunResult],
-        mock_results_confidence_only: list[RunResult],
-    ):
-        """Test detection of sweep metadata."""
-        assert orchestrator._has_sweep_metadata(mock_results_sweep_only) is True
-        assert orchestrator._has_sweep_metadata(mock_results_confidence_only) is False
-
-    def test_has_multiple_trials_per_value(
-        self,
-        orchestrator: MultiRunOrchestrator,
-        mock_results_sweep_and_confidence: list[RunResult],
-        mock_results_sweep_only: list[RunResult],
-    ):
-        """Test detection of multiple trials per value."""
-        assert (
-            orchestrator._has_multiple_trials_per_value(
-                mock_results_sweep_and_confidence
             )
-            is True
+        # concurrency=20: 1 successful + 1 failed
+        results.append(
+            RunResult(
+                label="concurrency_20_trial_0001",
+                success=True,
+                summary_metrics={
+                    "request_throughput": JsonMetricResult(
+                        unit="requests/sec", avg=120.0, std=5.0
+                    ),
+                },
+                metadata={
+                    "concurrency": 20,
+                    "trial_index": 0,
+                    "sweep_mode": "repeated",
+                },
+            )
         )
-        assert (
-            orchestrator._has_multiple_trials_per_value(mock_results_sweep_only)
-            is False
+        results.append(
+            RunResult(
+                label="concurrency_20_trial_0002",
+                success=False,
+                error="timeout",
+                metadata={
+                    "concurrency": 20,
+                    "trial_index": 1,
+                    "sweep_mode": "repeated",
+                },
+            )
         )
+        # concurrency=30: 2 successful trials
+        for trial in range(2):
+            results.append(
+                RunResult(
+                    label=f"concurrency_30_trial_{trial + 1:04d}",
+                    success=True,
+                    summary_metrics={
+                        "request_throughput": JsonMetricResult(
+                            unit="requests/sec",
+                            avg=130.0 + trial,
+                            std=5.0,
+                        ),
+                    },
+                    metadata={
+                        "concurrency": 30,
+                        "trial_index": trial,
+                        "sweep_mode": "repeated",
+                    },
+                )
+            )
 
-    def test_aggregate_per_sweep_value(
-        self,
-        orchestrator: MultiRunOrchestrator,
-        mock_results_sweep_and_confidence: list[RunResult],
+        aggregate = strategy.aggregate(results, config)
+        assert aggregate is not None
+        per_value = aggregate.metadata.get("per_value_aggregates", {})
+        # Only 10 and 30 should have aggregates (20 had only 1 successful)
+        assert len(per_value) == 2
+        assert 10 in per_value
+        assert 30 in per_value
+        assert 20 not in per_value
+
+    def test_aggregate_returns_none_when_no_values_have_enough_trials(
+        self, strategy, config
     ):
-        """Test per-value aggregation."""
-        per_value_aggregates = orchestrator._aggregate_per_sweep_value(
-            mock_results_sweep_and_confidence, confidence_level=0.95
+        results = [
+            RunResult(
+                label="concurrency_10_trial_0001",
+                success=True,
+                summary_metrics={
+                    "request_throughput": JsonMetricResult(
+                        unit="requests/sec", avg=100.0
+                    ),
+                },
+                metadata={
+                    "concurrency": 10,
+                    "trial_index": 0,
+                    "sweep_mode": "repeated",
+                },
+            ),
+        ]
+        aggregate = strategy.aggregate(results, config)
+        assert aggregate is None
+
+
+class TestCollectFailedValues:
+    """Test collect_failed_values on sweep strategies."""
+
+    def test_parameter_sweep_collects_failed_values(self):
+        strategy = ParameterSweepStrategy(
+            parameter_name="concurrency", parameter_values=[10, 20, 30]
         )
+        results = [
+            RunResult(
+                label="concurrency_10", success=True, metadata={"concurrency": 10}
+            ),
+            RunResult(
+                label="concurrency_20",
+                success=False,
+                error="Connection timeout",
+                metadata={"concurrency": 20},
+            ),
+            RunResult(
+                label="concurrency_30", success=True, metadata={"concurrency": 30}
+            ),
+        ]
+        failed = strategy.collect_failed_values(results)
+        assert len(failed) == 1
+        assert failed[0]["value"] == 20
+        assert failed[0]["parameter_name"] == "concurrency"
 
-        # Should have 3 aggregates
-        assert len(per_value_aggregates) == 3
-
-        # Each should have correct metadata
-        for concurrency, aggregate in per_value_aggregates.items():
-            assert aggregate.metadata["concurrency"] == concurrency
-            assert aggregate.metadata["sweep_mode"] == "repeated"
-            assert aggregate.aggregation_type == "confidence"
-
-    def test_aggregate_per_sweep_value_skips_insufficient_runs(
-        self,
-        orchestrator: MultiRunOrchestrator,
-        mock_results_sweep_and_confidence: list[RunResult],
-    ):
-        """Test that values with < 2 successful runs are skipped."""
-        # Mark one run as failed for concurrency=20
-        for result in mock_results_sweep_and_confidence:
-            if (
-                result.metadata["concurrency"] == 20
-                and result.metadata["trial_index"] == 1
-            ):
-                result.success = False
-                result.error = "Test failure"
-
-        per_value_aggregates = orchestrator._aggregate_per_sweep_value(
-            mock_results_sweep_and_confidence, confidence_level=0.95
+    def test_parameter_sweep_deduplicates_failures(self):
+        strategy = ParameterSweepStrategy(
+            parameter_name="concurrency", parameter_values=[10, 20]
         )
+        results = [
+            RunResult(
+                label="r1", success=False, error="err1", metadata={"concurrency": 20}
+            ),
+            RunResult(
+                label="r2", success=False, error="err2", metadata={"concurrency": 20}
+            ),
+        ]
+        failed = strategy.collect_failed_values(results)
+        assert len(failed) == 1
 
-        # Should only have 2 aggregates (10 and 30, not 20)
-        assert len(per_value_aggregates) == 2
-        assert 10 in per_value_aggregates
-        assert 30 in per_value_aggregates
-        assert 20 not in per_value_aggregates
-
-    def test_compute_sweep_aggregates(
-        self,
-        orchestrator: MultiRunOrchestrator,
-        mock_results_sweep_and_confidence: list[RunResult],
-    ):
-        """Test sweep-level aggregation."""
-        # First compute per-value aggregates
-        per_value_aggregates = orchestrator._aggregate_per_sweep_value(
-            mock_results_sweep_and_confidence, confidence_level=0.95
+    def test_sweep_confidence_collects_failed_values(self):
+        strategy = SweepConfidenceStrategy(
+            sweep=ParameterSweepStrategy(
+                parameter_name="concurrency", parameter_values=[10, 20]
+            ),
+            confidence=FixedTrialsStrategy(num_trials=2),
+            mode=SweepMode.REPEATED,
         )
+        results = [
+            RunResult(label="r1", success=True, metadata={"concurrency": 10}),
+            RunResult(
+                label="r2", success=False, error="timeout", metadata={"concurrency": 20}
+            ),
+        ]
+        failed = strategy.collect_failed_values(results)
+        assert len(failed) == 1
+        assert failed[0]["value"] == 20
 
-        # Then compute sweep aggregates
-        sweep_aggregate = orchestrator._compute_sweep_aggregates(
-            mock_results_sweep_and_confidence,
-            per_value_aggregates,
-            confidence_level=0.95,
+    def test_fixed_trials_returns_empty(self):
+        strategy = FixedTrialsStrategy(num_trials=3)
+        results = [
+            RunResult(label="r1", success=False, error="err"),
+        ]
+        failed = strategy.collect_failed_values(results)
+        assert failed == []
+
+    def test_no_failures_returns_empty(self):
+        strategy = ParameterSweepStrategy(
+            parameter_name="concurrency", parameter_values=[10, 20]
         )
+        results = [
+            RunResult(label="r1", success=True, metadata={"concurrency": 10}),
+            RunResult(label="r2", success=True, metadata={"concurrency": 20}),
+        ]
+        failed = strategy.collect_failed_values(results)
+        assert failed == []
 
-        assert sweep_aggregate is not None
-        assert sweep_aggregate.aggregation_type == "sweep"
-        assert "best_configurations" in sweep_aggregate.metadata
-        assert "pareto_optimal" in sweep_aggregate.metadata
+    def test_ignores_results_without_sweep_metadata(self):
+        strategy = ParameterSweepStrategy(
+            parameter_name="concurrency", parameter_values=[10, 20]
+        )
+        results = [
+            RunResult(
+                label="r1", success=False, error="err", metadata={"concurrency": 20}
+            ),
+            RunResult(label="r2", success=False, error="err", metadata={}),
+        ]
+        failed = strategy.collect_failed_values(results)
+        assert len(failed) == 1
+        assert failed[0]["value"] == 20

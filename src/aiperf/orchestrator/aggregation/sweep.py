@@ -22,7 +22,7 @@ class Objective(NamedTuple):
     """Definition of an optimization objective.
 
     Args:
-        metric_key: The metric tag (e.g., "request_throughput_avg", "ttft_p99_ms")
+        metric_key: The metric tag (e.g., "request_throughput_avg", "time_to_first_token_p99")
         direction: Whether to maximize or minimize this metric
 
     Note: In the future, direction could be derived from BaseMetric.optimization_direction
@@ -57,11 +57,18 @@ class ParameterCombination(NamedTuple):
         return hash(tuple(sorted(self.parameters.items())))
 
 
-# Default objectives for common use case
+# Default objectives for common use case.
+# time_to_first_token_p99 is the canonical flattened key produced by both
+# confidence aggregation and sweep-only aggregation (metric tag + stat key).
 DEFAULT_PARETO_OBJECTIVES = [
     Objective("request_throughput_avg", OptimizationDirection.MAXIMIZE),
-    Objective("ttft_p99_ms", OptimizationDirection.MINIMIZE),
+    Objective("time_to_first_token_p99", OptimizationDirection.MINIMIZE),
 ]
+
+# Non-streaming endpoints may not emit TTFT. request_latency_p99 is a
+# separate metric (total round-trip latency), used as a fallback when
+# TTFT is absent.
+_LATENCY_CANDIDATES = ["time_to_first_token_p99", "request_latency_p99"]
 
 
 def identify_pareto_optimal(
@@ -80,7 +87,7 @@ def identify_pareto_optimal(
 
             Example: [
                 Objective("request_throughput_avg", OptimizationDirection.MAXIMIZE),
-                Objective("ttft_p99_ms", OptimizationDirection.MINIMIZE),
+                Objective("time_to_first_token_p99", OptimizationDirection.MINIMIZE),
             ]
 
     Returns:
@@ -93,7 +100,7 @@ def identify_pareto_optimal(
         # 3D Pareto frontier (throughput, latency, cost)
         objectives = [
             Objective("request_throughput_avg", OptimizationDirection.MAXIMIZE),
-            Objective("ttft_p99_ms", OptimizationDirection.MINIMIZE),
+            Objective("time_to_first_token_p99", OptimizationDirection.MINIMIZE),
             Objective("cost_per_request", OptimizationDirection.MINIMIZE),
         ]
         pareto = identify_pareto_optimal(stats, objectives)
@@ -149,6 +156,20 @@ def identify_pareto_optimal(
 
 class SweepAggregation:
     """Compute sweep-level statistics and analysis."""
+
+    @staticmethod
+    def _resolve_latency_key(
+        per_combination_stats: dict["ParameterCombination", dict],
+    ) -> str | None:
+        """Find the best latency metric key present in all combinations.
+
+        Prefers time_to_first_token_p99 (streaming). Falls back to
+        request_latency_p99 (non-streaming).
+        """
+        for key in _LATENCY_CANDIDATES:
+            if all(key in stats for stats in per_combination_stats.values()):
+                return key
+        return None
 
     @staticmethod
     def compute(
@@ -222,15 +243,10 @@ class SweepAggregation:
                     ),
                 }
 
-            # Best latency: lowest ttft_p99_ms (or request_latency_p99 as fallback)
-            latency_metric = None
-            if all("ttft_p99_ms" in stats for stats in per_combination_stats.values()):
-                latency_metric = "ttft_p99_ms"
-            elif all(
-                "request_latency_p99" in stats
-                for stats in per_combination_stats.values()
-            ):
-                latency_metric = "request_latency_p99"
+            # Best latency: check TTFT aliases then request_latency_p99
+            latency_metric = SweepAggregation._resolve_latency_key(
+                per_combination_stats
+            )
 
             if latency_metric:
                 best_latency_combo, best_latency_stats = min(
@@ -246,29 +262,20 @@ class SweepAggregation:
         # Identify Pareto optimal configurations
         pareto_optimal = []
         if per_combination_stats:
-            # Check if all required metrics are present in ALL combinations
-            has_required_metrics = all(
-                all(obj.metric_key in stats for obj in DEFAULT_PARETO_OBJECTIVES)
+            latency_key = SweepAggregation._resolve_latency_key(per_combination_stats)
+            has_throughput = all(
+                "request_throughput_avg" in stats
                 for stats in per_combination_stats.values()
             )
-            if has_required_metrics:
-                pareto_combos = identify_pareto_optimal(per_combination_stats)
-                pareto_optimal = [combo.to_dict() for combo in pareto_combos]
-            else:
-                # Try fallback objectives (request_latency_p99 instead of ttft_p99_ms)
-                fallback_objectives = [
+            if has_throughput and latency_key:
+                objectives = [
                     Objective("request_throughput_avg", OptimizationDirection.MAXIMIZE),
-                    Objective("request_latency_p99", OptimizationDirection.MINIMIZE),
+                    Objective(latency_key, OptimizationDirection.MINIMIZE),
                 ]
-                has_fallback_metrics = all(
-                    all(obj.metric_key in stats for obj in fallback_objectives)
-                    for stats in per_combination_stats.values()
+                pareto_combos = identify_pareto_optimal(
+                    per_combination_stats, objectives
                 )
-                if has_fallback_metrics:
-                    pareto_combos = identify_pareto_optimal(
-                        per_combination_stats, fallback_objectives
-                    )
-                    pareto_optimal = [combo.to_dict() for combo in pareto_combos]
+                pareto_optimal = [combo.to_dict() for combo in pareto_combos]
 
         return {
             "metadata": metadata,

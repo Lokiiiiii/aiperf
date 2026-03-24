@@ -404,7 +404,7 @@ class TestMultiRunOrchestrator:
             json.dump(json_content, f)
 
         # Extract metrics
-        metrics = orchestrator._extract_summary_metrics(config)
+        metrics = orchestrator._extract_summary_metrics(artifacts_path)
 
         # Verify metrics were extracted with full JsonMetricResult structure
         assert "time_to_first_token" in metrics
@@ -428,7 +428,7 @@ class TestMultiRunOrchestrator:
         config.output.artifact_directory = artifacts_path
 
         # Extract metrics (file doesn't exist)
-        metrics = orchestrator._extract_summary_metrics(config)
+        metrics = orchestrator._extract_summary_metrics(artifacts_path)
 
         # Should return empty dict
         assert metrics == {}
@@ -450,7 +450,7 @@ class TestMultiRunOrchestrator:
             f.write("{ invalid json }")
 
         # Extract metrics (invalid JSON)
-        metrics = orchestrator._extract_summary_metrics(config)
+        metrics = orchestrator._extract_summary_metrics(artifacts_path)
 
         # Should return empty dict
         assert metrics == {}
@@ -481,7 +481,7 @@ class TestMultiRunOrchestrator:
         with open(artifacts_path / "profile_export_aiperf.json", "w") as f:
             json.dump(json_content, f)
 
-        metrics = orchestrator._extract_summary_metrics(config)
+        metrics = orchestrator._extract_summary_metrics(artifacts_path)
 
         # Verify the full structure is preserved
         assert "time_to_first_token" in metrics
@@ -567,123 +567,3 @@ class TestMultiRunOrchestrator:
         assert result.success is False
         assert "Path creation failed" in result.error
         assert result.label == "run_0001"
-
-    def test_collect_failed_sweep_values_with_no_failures(
-        self, mock_service_config, tmp_path
-    ):
-        """Test _collect_failed_sweep_values returns empty list when all runs succeed."""
-        orchestrator = MultiRunOrchestrator(tmp_path, mock_service_config)
-
-        results = [
-            RunResult(
-                label="concurrency_10",
-                success=True,
-                summary_metrics={},
-                metadata={"concurrency": 10, "value_index": 0},
-            ),
-            RunResult(
-                label="concurrency_20",
-                success=True,
-                summary_metrics={},
-                metadata={"concurrency": 20, "value_index": 1},
-            ),
-        ]
-
-        failed_values = orchestrator._collect_failed_sweep_values(results)
-        assert failed_values == []
-
-    def test_collect_failed_sweep_values_with_failures(
-        self, mock_service_config, tmp_path
-    ):
-        """Test _collect_failed_sweep_values collects failed sweep values."""
-        orchestrator = MultiRunOrchestrator(tmp_path, mock_service_config)
-
-        results = [
-            RunResult(
-                label="concurrency_10",
-                success=True,
-                summary_metrics={},
-                metadata={"concurrency": 10, "value_index": 0},
-            ),
-            RunResult(
-                label="concurrency_20",
-                success=False,
-                error="Connection timeout",
-                metadata={"concurrency": 20, "value_index": 1},
-            ),
-            RunResult(
-                label="concurrency_30",
-                success=True,
-                summary_metrics={},
-                metadata={"concurrency": 30, "value_index": 2},
-            ),
-        ]
-
-        failed_values = orchestrator._collect_failed_sweep_values(results)
-
-        assert len(failed_values) == 1
-        assert failed_values[0]["value"] == 20
-        assert failed_values[0]["parameter_name"] == "concurrency"
-        assert failed_values[0]["error"] == "Connection timeout"
-        assert "timestamp" in failed_values[0]
-
-    def test_collect_failed_sweep_values_deduplicates(
-        self, mock_service_config, tmp_path
-    ):
-        """Test _collect_failed_sweep_values deduplicates multiple failures at same value."""
-        orchestrator = MultiRunOrchestrator(tmp_path, mock_service_config)
-
-        # Multiple trials at same concurrency value, all failed
-        results = [
-            RunResult(
-                label="trial_0001_concurrency_20",
-                success=False,
-                error="Connection timeout",
-                metadata={"concurrency": 20, "trial_index": 0, "value_index": 1},
-            ),
-            RunResult(
-                label="trial_0002_concurrency_20",
-                success=False,
-                error="Connection timeout",
-                metadata={"concurrency": 20, "trial_index": 1, "value_index": 1},
-            ),
-            RunResult(
-                label="trial_0003_concurrency_20",
-                success=False,
-                error="Connection timeout",
-                metadata={"concurrency": 20, "trial_index": 2, "value_index": 1},
-            ),
-        ]
-
-        failed_values = orchestrator._collect_failed_sweep_values(results)
-
-        # Should only report the value once, not three times
-        assert len(failed_values) == 1
-        assert failed_values[0]["value"] == 20
-
-    def test_collect_failed_sweep_values_ignores_non_sweep_failures(
-        self, mock_service_config, tmp_path
-    ):
-        """Test _collect_failed_sweep_values ignores failures without sweep metadata."""
-        orchestrator = MultiRunOrchestrator(tmp_path, mock_service_config)
-
-        results = [
-            RunResult(
-                label="run_0001",
-                success=False,
-                error="Some error",
-                metadata={},  # No concurrency metadata
-            ),
-            RunResult(
-                label="concurrency_20",
-                success=False,
-                error="Connection timeout",
-                metadata={"concurrency": 20, "value_index": 1},
-            ),
-        ]
-
-        failed_values = orchestrator._collect_failed_sweep_values(results)
-
-        # Should only collect the sweep failure, not the non-sweep failure
-        assert len(failed_values) == 1
-        assert failed_values[0]["value"] == 20

@@ -759,7 +759,7 @@ class TestProperty13PBT:
             combos.append(combo)
             per_combination_stats[combo] = {
                 "request_throughput_avg": {"mean": throughput},
-                "ttft_p99_ms": {"mean": latency},
+                "time_to_first_token_p99": {"mean": latency},
             }
 
         # Identify Pareto optimal points
@@ -768,7 +768,7 @@ class TestProperty13PBT:
         # Verify: each Pareto optimal point is not dominated
         for p in pareto:
             p_throughput = per_combination_stats[p]["request_throughput_avg"]["mean"]
-            p_latency = per_combination_stats[p]["ttft_p99_ms"]["mean"]
+            p_latency = per_combination_stats[p]["time_to_first_token_p99"]["mean"]
 
             for other in per_combination_stats:
                 if other == p:
@@ -777,7 +777,9 @@ class TestProperty13PBT:
                 other_throughput = per_combination_stats[other][
                     "request_throughput_avg"
                 ]["mean"]
-                other_latency = per_combination_stats[other]["ttft_p99_ms"]["mean"]
+                other_latency = per_combination_stats[other]["time_to_first_token_p99"][
+                    "mean"
+                ]
 
                 # Should not be strictly better on both (domination)
                 # Domination: better or equal on all, strictly better on at least one
@@ -805,7 +807,7 @@ class TestProperty13PBT:
         non_pareto = [combo for combo in per_combination_stats if combo not in pareto]
         for np in non_pareto:
             np_throughput = per_combination_stats[np]["request_throughput_avg"]["mean"]
-            np_latency = per_combination_stats[np]["ttft_p99_ms"]["mean"]
+            np_latency = per_combination_stats[np]["time_to_first_token_p99"]["mean"]
 
             # Should be dominated by at least one point
             is_dominated = False
@@ -816,7 +818,9 @@ class TestProperty13PBT:
                 other_throughput = per_combination_stats[other][
                     "request_throughput_avg"
                 ]["mean"]
-                other_latency = per_combination_stats[other]["ttft_p99_ms"]["mean"]
+                other_latency = per_combination_stats[other]["time_to_first_token_p99"][
+                    "mean"
+                ]
 
                 better_throughput = other_throughput > np_throughput
                 better_latency = other_latency < np_latency

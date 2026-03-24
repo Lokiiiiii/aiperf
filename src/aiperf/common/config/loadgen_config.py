@@ -863,6 +863,26 @@ class LoadGeneratorConfig(BaseConfig):
                     "Either remove --set-consistent-seed or add --num-profile-runs 5 (or higher)."
                 )
 
+            # Check if convergence_metric was explicitly set by the user
+            if "convergence_metric" in self.model_fields_set:
+                raise ValueError(
+                    "--convergence-metric only applies when --num-profile-runs > 1. "
+                    "Remove --convergence-metric or increase --num-profile-runs."
+                )
+
+            # Check if other convergence flags were explicitly set
+            convergence_dependent_flags = {
+                "convergence_mode": "--convergence-mode",
+                "convergence_threshold": "--convergence-threshold",
+                "convergence_stat": "--convergence-stat",
+            }
+            for field_name, flag_name in convergence_dependent_flags.items():
+                if field_name in self.model_fields_set:
+                    raise ValueError(
+                        f"{flag_name} only applies when --num-profile-runs > 1. "
+                        f"Remove {flag_name} or increase --num-profile-runs."
+                    )
+
         return self
 
     @model_validator(mode="after")
@@ -900,20 +920,5 @@ class LoadGeneratorConfig(BaseConfig):
                     "This parameter controls whether all sweep values use the same random seed for correlated workload comparisons. "
                     "Either remove --parameter-sweep-same-seed or provide a comma-separated list: --concurrency 10,20,30"
                 )
-
-            # Check if convergence_metric was explicitly set by the user
-            if "convergence_metric" in self.model_fields_set:
-                raise ValueError(
-                    "--convergence-metric only applies when --num-profile-runs > 1. "
-                    "Remove --convergence-metric or increase --num-profile-runs."
-                )
-
-            # Check if other convergence flags were explicitly set
-            for field_name, flag_name in convergence_dependent_flags.items():
-                if field_name in self.model_fields_set:
-                    raise ValueError(
-                        f"{flag_name} only applies when --num-profile-runs > 1. "
-                        f"Remove {flag_name} or increase --num-profile-runs."
-                    )
 
         return self

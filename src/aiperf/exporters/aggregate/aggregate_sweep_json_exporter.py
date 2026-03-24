@@ -66,7 +66,12 @@ class AggregateSweepJsonExporter(AggregateBaseExporter):
         # Extract metadata (excluding the sweep-specific sections)
         metadata = {}
         for key, value in self._result.metadata.items():
-            if key not in ["best_configurations", "pareto_optimal", "trends"]:
+            if key not in [
+                "best_configurations",
+                "pareto_optimal",
+                "trends",
+                "per_value_aggregates",
+            ]:
                 metadata[key] = value
 
         output["metadata"] = metadata

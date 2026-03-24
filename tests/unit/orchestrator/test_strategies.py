@@ -65,11 +65,11 @@ class TestFixedTrialsStrategy:
     @pytest.mark.parametrize(
         "run_index,num_trials,expected",
         [
-            (0, 10, "trial_0001"),
-            (1, 10, "trial_0002"),
-            (9, 10, "trial_0010"),
-            (0, 5, "trial_0001"),
-            (4, 5, "trial_0005"),
+            (0, 10, "run_0001"),
+            (1, 10, "run_0002"),
+            (9, 10, "run_0010"),
+            (0, 5, "run_0001"),
+            (4, 5, "run_0005"),
         ],
     )
     def test_get_run_label_zero_padding_returns_expected(
@@ -187,8 +187,8 @@ class TestFixedTrialsStrategy:
         strategy = FixedTrialsStrategy(num_trials=5)
 
         # Normal labels should work fine
-        assert strategy.get_run_label(0) == "trial_0001"
-        assert strategy.get_run_label(99) == "trial_0100"
+        assert strategy.get_run_label(0) == "run_0001"
+        assert strategy.get_run_label(99) == "run_0100"
 
     def test_disable_warmup_after_first_enabled(self):
         """Test that warmup is disabled after first run when disable_warmup_after_first=True."""
@@ -296,15 +296,15 @@ class TestFixedTrialsStrategy:
 
         # Test path for first run
         path = strategy.get_run_path(base_dir, 0)
-        assert path == Path("/tmp/artifacts/profile_runs/trial_0001")
+        assert path == Path("/tmp/artifacts/profile_runs/run_0001")
 
         # Test path for second run
         path = strategy.get_run_path(base_dir, 1)
-        assert path == Path("/tmp/artifacts/profile_runs/trial_0002")
+        assert path == Path("/tmp/artifacts/profile_runs/run_0002")
 
         # Test path for tenth run
         path = strategy.get_run_path(base_dir, 9)
-        assert path == Path("/tmp/artifacts/profile_runs/trial_0010")
+        assert path == Path("/tmp/artifacts/profile_runs/run_0010")
 
     def test_get_aggregate_path(self):
         """Test get_aggregate_path returns correct path."""
@@ -331,7 +331,6 @@ class TestFixedTrialsStrategy:
             # Path should end with the label
             assert path.name == label
             assert str(path).endswith(f"profile_runs/{label}")
-
 
 
 class TestAdaptiveStrategy:
@@ -578,7 +577,7 @@ class TestAdaptiveStrategy:
 
     def test_invalid_cooldown_raises(self):
         criterion = self._make_mock_criterion()
-        with pytest.raises(ValueError, match="Invalid cooldown_seconds"):
+        with pytest.raises(ValueError, match="Invalid cooldown duration"):
             AdaptiveStrategy(criterion=criterion, cooldown_seconds=-1.0)
 
     def test_invalid_min_runs_raises(self):

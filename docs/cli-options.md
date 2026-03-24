@@ -801,18 +801,18 @@ Duration in seconds to ramp warmup request rate from a proportional minimum to t
 #### `--parameter-sweep-mode` `<str>`
 
 Sweep execution mode: 'repeated' (default) runs full sweep N times, 'independent' runs N trials at each sweep value.
-<br>_Default: `repeated`_
+<br/>_Default: `repeated`_
 
 #### `--parameter-sweep-cooldown-seconds` `<float>`
 
 Cooldown duration between sweep values (seconds). Only applies when sweeping parameters (e.g., --concurrency 10,20,30). Allows the system to stabilize between different parameter values. Default is 0 (no cooldown).
-<br>_Constraints: ≥ 0_
-<br>_Default: `0.0`_
+<br/>_Constraints: ≥ 0_
+<br/>_Default: `0.0`_
 
 #### `--parameter-sweep-same-seed`
 
 Use same random seed across all sweep values (default: derive different seeds). Only applies when sweeping parameters (e.g., --concurrency 10,20,30). When False (default), each sweep value uses a different derived seed (base_seed + sweep_index) to avoid artificial correlation between measurements. When True, all sweep values use the same base seed for correlated workload comparisons.
-<br>_Flag (no value required)_
+<br/>_Flag (no value required)_
 
 ### Multi-Run Confidence Reporting
 

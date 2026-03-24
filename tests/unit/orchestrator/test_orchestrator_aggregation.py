@@ -1,711 +1,331 @@
 # SPDX-FileCopyrightText: Copyright (c) 2025-2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
-"""Tests for MultiRunOrchestrator aggregation and export methods."""
+"""Tests for MultiRunOrchestrator aggregation and export delegation.
 
-from unittest.mock import AsyncMock, Mock, patch
+The orchestrator delegates aggregation and export to strategies. These tests
+verify the delegation flow: orchestrator calls strategy.aggregate() and
+strategy.export_aggregates() with correct arguments.
+"""
+
+from pathlib import Path
+from unittest.mock import Mock, patch
 
 import pytest
 
 from aiperf.common.config import EndpointConfig, ServiceConfig, UserConfig
+from aiperf.common.models.export_models import JsonMetricResult
 from aiperf.orchestrator.aggregation.base import AggregateResult
 from aiperf.orchestrator.models import RunResult
 from aiperf.orchestrator.orchestrator import MultiRunOrchestrator
+from aiperf.orchestrator.strategies import (
+    FixedTrialsStrategy,
+    ParameterSweepStrategy,
+    SweepConfidenceStrategy,
+    SweepMode,
+)
 
 
-class TestOrchestratorAggregation:
-    """Tests for orchestrator aggregation methods."""
+class TestOrchestratorAggregationDelegation:
+    """Tests that execute_and_export delegates aggregation to strategy."""
 
     @pytest.fixture
     def mock_service_config(self):
-        """Create a mock service config."""
         mock_config = Mock(spec=ServiceConfig)
-        mock_config.model_dump.return_value = {
-            "workers_max": 4,
-            "workers_min": 1,
-        }
+        mock_config.model_dump.return_value = {}
         return mock_config
 
     @pytest.fixture
-    def mock_user_config(self):
-        """Create a mock user config."""
-        config = UserConfig(endpoint=EndpointConfig(model_names=["test-model"]))
-        config.loadgen.warmup_request_count = 10
-        return config
+    def orchestrator(self, mock_service_config, tmp_path):
+        return MultiRunOrchestrator(tmp_path, mock_service_config)
 
     @pytest.fixture
-    def sample_run_results(self, tmp_path):
-        """Create sample run results for testing."""
+    def mock_results(self, tmp_path):
         return [
             RunResult(
-                label="run_0001",
+                label="trial_0001",
                 success=True,
-                summary_metrics={},
-                artifacts_path=tmp_path / "run_0001",
+                summary_metrics={"ttft": JsonMetricResult(unit="ms", avg=100.0)},
+                artifacts_path=tmp_path / "trial_0001",
             ),
             RunResult(
-                label="run_0002",
+                label="trial_0002",
                 success=True,
-                summary_metrics={},
-                artifacts_path=tmp_path / "run_0002",
+                summary_metrics={"ttft": JsonMetricResult(unit="ms", avg=105.0)},
+                artifacts_path=tmp_path / "trial_0002",
             ),
         ]
 
-    @pytest.fixture
-    def sample_aggregate_result(self):
-        """Create a sample aggregate result."""
-        return AggregateResult(
+    def test_execute_and_export_calls_strategy_aggregate(
+        self, orchestrator, mock_results
+    ):
+        """Verify orchestrator calls strategy.aggregate() with results and config."""
+        mock_strategy = Mock(spec=FixedTrialsStrategy)
+        mock_strategy.execute.return_value = None
+        # _execute_loop calls should_continue: while(True), run, cooldown(True), while(True), run, cooldown(False), while(False)
+        mock_strategy.should_continue.side_effect = [True, True, True, False, False]
+        mock_strategy.get_next_config.side_effect = lambda c, r: c
+        mock_strategy.get_run_label.side_effect = ["trial_0001", "trial_0002"]
+        mock_strategy.get_run_path.side_effect = [Path("/tmp/r1"), Path("/tmp/r2")]
+        mock_strategy.tag_result.side_effect = lambda r, i: r
+        mock_strategy.collect_failed_values.return_value = []
+        mock_strategy.get_cooldown_seconds.return_value = 0.0
+        mock_strategy.aggregate.return_value = None
+
+        config = UserConfig(endpoint=EndpointConfig(model_names=["test-model"]))
+
+        with patch.object(
+            orchestrator, "_execute_single_run", side_effect=mock_results
+        ):
+            orchestrator.execute_and_export(config, strategy=mock_strategy)
+
+        mock_strategy.aggregate.assert_called_once()
+        call_args = mock_strategy.aggregate.call_args
+        assert len(call_args[0][0]) == 2  # results list
+        assert call_args[0][1] is config  # config
+
+    def test_execute_and_export_calls_export_when_aggregate_exists(
+        self, orchestrator, tmp_path
+    ):
+        """Verify orchestrator calls strategy.export_aggregates() when aggregate is not None."""
+        mock_aggregate = AggregateResult(
             aggregation_type="confidence",
-            num_runs=5,
-            num_successful_runs=5,
+            num_runs=2,
+            num_successful_runs=2,
             failed_runs=[],
             metadata={},
             metrics={},
         )
 
-    def test_aggregate_and_export_no_aggregates_returns_early(
-        self, mock_service_config, mock_user_config, tmp_path
-    ):
-        """Test _aggregate_and_export returns early when no aggregates."""
-        orchestrator = MultiRunOrchestrator(tmp_path, mock_service_config)
+        mock_strategy = Mock(spec=FixedTrialsStrategy)
+        mock_strategy.execute.return_value = None
+        mock_strategy.should_continue.side_effect = [True, False, False]
+        mock_strategy.get_next_config.side_effect = lambda c, r: c
+        mock_strategy.get_run_label.return_value = "trial_0001"
+        mock_strategy.get_run_path.return_value = Path("/tmp/r1")
+        mock_strategy.tag_result.side_effect = lambda r, i: r
+        mock_strategy.collect_failed_values.return_value = []
+        mock_strategy.get_cooldown_seconds.return_value = 0.0
+        mock_strategy.aggregate.return_value = mock_aggregate
 
-        # Mock aggregate_results to return empty dict
-        with patch.object(orchestrator, "aggregate_results", return_value={}):
-            # Should not raise any errors
-            orchestrator._aggregate_and_export([], mock_user_config)
+        config = UserConfig(endpoint=EndpointConfig(model_names=["test-model"]))
+        mock_result = RunResult(
+            label="trial_0001",
+            success=True,
+            summary_metrics={"ttft": JsonMetricResult(unit="ms", avg=100.0)},
+            artifacts_path=tmp_path / "trial_0001",
+        )
 
-    def test_aggregate_and_export_confidence_only_mode_calls_confidence_export(
-        self,
-        mock_service_config,
-        mock_user_config,
-        sample_run_results,
-        sample_aggregate_result,
-        tmp_path,
-    ):
-        """Test _aggregate_and_export with confidence-only aggregation calls confidence export."""
-        orchestrator = MultiRunOrchestrator(tmp_path, mock_service_config)
-
-        aggregates = {"aggregate": sample_aggregate_result}
-
-        with (
-            patch.object(orchestrator, "aggregate_results", return_value=aggregates),
-            patch.object(orchestrator, "_export_confidence_aggregate") as mock_export,
+        with patch.object(
+            orchestrator, "_execute_single_run", return_value=mock_result
         ):
-            orchestrator._aggregate_and_export(sample_run_results, mock_user_config)
+            orchestrator.execute_and_export(config, strategy=mock_strategy)
 
-            # Verify export was called with correct arguments
-            mock_export.assert_called_once_with(
-                sample_aggregate_result, mock_user_config
-            )
+        mock_strategy.export_aggregates.assert_called_once_with(
+            mock_aggregate, orchestrator.base_dir
+        )
 
-    def test_aggregate_and_export_sweep_mode_calls_sweep_export(
-        self,
-        mock_service_config,
-        mock_user_config,
-        sample_run_results,
-        sample_aggregate_result,
-        tmp_path,
+    def test_execute_and_export_skips_export_when_aggregate_is_none(
+        self, orchestrator, tmp_path
     ):
-        """Test _aggregate_and_export with sweep aggregation calls sweep export."""
-        orchestrator = MultiRunOrchestrator(tmp_path, mock_service_config)
+        """Verify orchestrator skips export when strategy.aggregate() returns None."""
+        mock_strategy = Mock(spec=FixedTrialsStrategy)
+        mock_strategy.execute.return_value = None
+        mock_strategy.should_continue.side_effect = [True, False, False]
+        mock_strategy.get_next_config.side_effect = lambda c, r: c
+        mock_strategy.get_run_label.return_value = "trial_0001"
+        mock_strategy.get_run_path.return_value = Path("/tmp/r1")
+        mock_strategy.tag_result.side_effect = lambda r, i: r
+        mock_strategy.collect_failed_values.return_value = []
+        mock_strategy.get_cooldown_seconds.return_value = 0.0
+        mock_strategy.aggregate.return_value = None
 
-        per_value_agg = {10: sample_aggregate_result}
-        sweep_agg = sample_aggregate_result
+        config = UserConfig(endpoint=EndpointConfig(model_names=["test-model"]))
+        mock_result = RunResult(
+            label="trial_0001",
+            success=True,
+            summary_metrics={"ttft": JsonMetricResult(unit="ms", avg=100.0)},
+            artifacts_path=tmp_path / "trial_0001",
+        )
 
-        aggregates = {
-            "per_value_aggregates": per_value_agg,
-            "sweep_aggregate": sweep_agg,
-        }
-
-        with (
-            patch.object(orchestrator, "aggregate_results", return_value=aggregates),
-            patch.object(orchestrator, "_export_sweep_aggregates") as mock_export,
+        with patch.object(
+            orchestrator, "_execute_single_run", return_value=mock_result
         ):
-            orchestrator._aggregate_and_export(sample_run_results, mock_user_config)
+            orchestrator.execute_and_export(config, strategy=mock_strategy)
 
-            # Verify export was called with correct arguments
-            mock_export.assert_called_once_with(
-                per_value_agg, sweep_agg, mock_user_config
-            )
+        mock_strategy.export_aggregates.assert_not_called()
 
 
-class TestConfidenceAggregateExport:
-    """Tests for confidence aggregate export."""
+class TestConfidenceExport:
+    """Tests for FixedTrialsStrategy.export_aggregates()."""
 
-    @pytest.fixture
-    def mock_service_config(self):
-        """Create a mock service config."""
-        mock_config = Mock(spec=ServiceConfig)
-        mock_config.model_dump.return_value = {}
-        return mock_config
-
-    @pytest.fixture
-    def mock_user_config(self):
-        """Create a mock user config."""
-        return UserConfig(endpoint=EndpointConfig(model_names=["test-model"]))
-
-    @pytest.fixture
-    def sample_aggregate_result(self):
-        """Create a sample aggregate result."""
-        return AggregateResult(
+    def test_export_calls_export_confidence_helper(self, tmp_path):
+        strategy = FixedTrialsStrategy(num_trials=3)
+        aggregate = AggregateResult(
             aggregation_type="confidence",
-            num_runs=5,
-            num_successful_runs=5,
+            num_runs=3,
+            num_successful_runs=3,
             failed_runs=[],
             metadata={},
             metrics={},
         )
 
-    def test_export_confidence_aggregate_creates_directory(
-        self, mock_service_config, mock_user_config, sample_aggregate_result, tmp_path
-    ):
-        """Test that export creates aggregate directory."""
-        orchestrator = MultiRunOrchestrator(tmp_path, mock_service_config)
+        with patch(
+            "aiperf.orchestrator.export_helpers.export_confidence"
+        ) as mock_export:
+            mock_export.return_value = (tmp_path / "a.json", tmp_path / "a.csv")
+            strategy.export_aggregates(aggregate, tmp_path)
 
-        # Mock the exporters at the module level where they're imported
-        mock_json_path = tmp_path / "aggregate" / "profile_export_aiperf.json"
-        mock_csv_path = tmp_path / "aggregate" / "profile_export_aiperf.csv"
-
-        with (
-            patch(
-                "aiperf.exporters.aggregate.AggregateConfidenceJsonExporter"
-            ) as mock_json_exporter,
-            patch(
-                "aiperf.exporters.aggregate.AggregateConfidenceCsvExporter"
-            ) as mock_csv_exporter,
-        ):
-            # Setup mock exporters
-            mock_json_instance = Mock()
-            mock_json_instance.export = AsyncMock(return_value=mock_json_path)
-            mock_json_exporter.return_value = mock_json_instance
-
-            mock_csv_instance = Mock()
-            mock_csv_instance.export = AsyncMock(return_value=mock_csv_path)
-            mock_csv_exporter.return_value = mock_csv_instance
-
-            # Execute
-            orchestrator._export_confidence_aggregate(
-                sample_aggregate_result, mock_user_config
-            )
-
-            # Verify directory was created
-            aggregate_dir = tmp_path / "aggregate"
-            assert aggregate_dir.exists()
-            assert aggregate_dir.is_dir()
-
-    def test_export_confidence_aggregate_calls_exporters(
-        self, mock_service_config, mock_user_config, sample_aggregate_result, tmp_path
-    ):
-        """Test that export calls both JSON and CSV exporters."""
-        orchestrator = MultiRunOrchestrator(tmp_path, mock_service_config)
-
-        mock_json_path = tmp_path / "aggregate" / "profile_export_aiperf.json"
-        mock_csv_path = tmp_path / "aggregate" / "profile_export_aiperf.csv"
-
-        with (
-            patch(
-                "aiperf.exporters.aggregate.AggregateConfidenceJsonExporter"
-            ) as mock_json_exporter,
-            patch(
-                "aiperf.exporters.aggregate.AggregateConfidenceCsvExporter"
-            ) as mock_csv_exporter,
-        ):
-            # Setup mock exporters
-            mock_json_instance = Mock()
-            mock_json_instance.export = AsyncMock(return_value=mock_json_path)
-            mock_json_exporter.return_value = mock_json_instance
-
-            mock_csv_instance = Mock()
-            mock_csv_instance.export = AsyncMock(return_value=mock_csv_path)
-            mock_csv_exporter.return_value = mock_csv_instance
-
-            # Execute
-            orchestrator._export_confidence_aggregate(
-                sample_aggregate_result, mock_user_config
-            )
-
-            # Verify both exporters were called
-            mock_json_instance.export.assert_called_once()
-            mock_csv_instance.export.assert_called_once()
+        mock_export.assert_called_once()
+        call_args = mock_export.call_args[0]
+        assert call_args[0] is aggregate
+        assert call_args[1] == tmp_path / "aggregate"
 
 
-class TestSweepAggregateExport:
-    """Tests for sweep aggregate export."""
+class TestSweepExport:
+    """Tests for ParameterSweepStrategy.export_aggregates()."""
+
+    def test_export_calls_export_sweep_helper(self, tmp_path):
+        strategy = ParameterSweepStrategy(
+            parameter_name="concurrency", parameter_values=[10, 20, 30]
+        )
+        aggregate = AggregateResult(
+            aggregation_type="sweep",
+            num_runs=3,
+            num_successful_runs=3,
+            failed_runs=[],
+            metadata={"best_configurations": {}, "pareto_optimal": []},
+            metrics=[],
+        )
+
+        with patch("aiperf.orchestrator.export_helpers.export_sweep") as mock_export:
+            mock_export.return_value = (tmp_path / "s.json", tmp_path / "s.csv")
+            strategy.export_aggregates(aggregate, tmp_path)
+
+        mock_export.assert_called_once()
+        call_args = mock_export.call_args[0]
+        assert call_args[0] is aggregate
+        assert call_args[1] == tmp_path / "sweep_aggregate"
+
+
+class TestSweepConfidenceExport:
+    """Tests for SweepConfidenceStrategy.export_aggregates()."""
 
     @pytest.fixture
-    def mock_service_config(self):
-        """Create a mock service config."""
-        mock_config = Mock(spec=ServiceConfig)
-        mock_config.model_dump.return_value = {}
-        return mock_config
+    def strategy_repeated(self):
+        return SweepConfidenceStrategy(
+            sweep=ParameterSweepStrategy(
+                parameter_name="concurrency", parameter_values=[10, 20]
+            ),
+            confidence=FixedTrialsStrategy(num_trials=2),
+            mode=SweepMode.REPEATED,
+        )
 
     @pytest.fixture
-    def mock_user_config(self):
-        """Create a mock user config."""
-        return UserConfig(endpoint=EndpointConfig(model_names=["test-model"]))
+    def strategy_independent(self):
+        return SweepConfidenceStrategy(
+            sweep=ParameterSweepStrategy(
+                parameter_name="concurrency", parameter_values=[10, 20]
+            ),
+            confidence=FixedTrialsStrategy(num_trials=2),
+            mode=SweepMode.INDEPENDENT,
+        )
 
-    @pytest.fixture
-    def sample_per_value_aggregates(self):
-        """Create sample per-value aggregates."""
-        return {
+    def _make_aggregate(self):
+        per_value = {
             10: AggregateResult(
                 aggregation_type="confidence",
-                num_runs=3,
-                num_successful_runs=3,
+                num_runs=2,
+                num_successful_runs=2,
                 failed_runs=[],
                 metadata={"concurrency": 10},
                 metrics={},
             ),
             20: AggregateResult(
                 aggregation_type="confidence",
-                num_runs=3,
-                num_successful_runs=3,
+                num_runs=2,
+                num_successful_runs=2,
                 failed_runs=[],
                 metadata={"concurrency": 20},
                 metrics={},
             ),
         }
-
-    @pytest.fixture
-    def sample_sweep_aggregate(self):
-        """Create a sample sweep aggregate."""
         return AggregateResult(
             aggregation_type="sweep",
-            num_runs=6,
-            num_successful_runs=6,
+            num_runs=4,
+            num_successful_runs=4,
             failed_runs=[],
             metadata={
-                "sweep_parameters": [{"name": "concurrency", "values": [10, 20]}],
+                "per_value_aggregates": per_value,
                 "best_configurations": {},
                 "pareto_optimal": [],
             },
             metrics=[],
         )
 
-    def test_export_sweep_aggregates_exports_per_value_aggregates(
-        self,
-        mock_service_config,
-        mock_user_config,
-        sample_per_value_aggregates,
-        sample_sweep_aggregate,
-        tmp_path,
+    def test_repeated_mode_exports_per_value_and_sweep(
+        self, strategy_repeated, tmp_path
     ):
-        """Test that sweep export creates per-value aggregate directories."""
-        orchestrator = MultiRunOrchestrator(tmp_path, mock_service_config)
+        aggregate = self._make_aggregate()
 
         with (
-            patch(
-                "aiperf.exporters.aggregate.AggregateConfidenceJsonExporter"
-            ) as mock_conf_json,
-            patch(
-                "aiperf.exporters.aggregate.AggregateConfidenceCsvExporter"
-            ) as mock_conf_csv,
-            patch(
-                "aiperf.exporters.aggregate.AggregateSweepJsonExporter"
-            ) as mock_sweep_json,
-            patch(
-                "aiperf.exporters.aggregate.AggregateSweepCsvExporter"
-            ) as mock_sweep_csv,
+            patch("aiperf.orchestrator.export_helpers.export_confidence") as mock_conf,
+            patch("aiperf.orchestrator.export_helpers.export_sweep") as mock_sweep,
         ):
-            # Setup mocks for confidence exporters
-            mock_conf_json_instance = Mock()
-            mock_conf_json_instance.export = AsyncMock(
-                return_value=tmp_path / "conf.json"
-            )
-            mock_conf_json.return_value = mock_conf_json_instance
+            mock_conf.return_value = (tmp_path / "c.json", tmp_path / "c.csv")
+            mock_sweep.return_value = (tmp_path / "s.json", tmp_path / "s.csv")
+            strategy_repeated.export_aggregates(aggregate, tmp_path)
 
-            mock_conf_csv_instance = Mock()
-            mock_conf_csv_instance.export = AsyncMock(
-                return_value=tmp_path / "conf.csv"
-            )
-            mock_conf_csv.return_value = mock_conf_csv_instance
+        # 2 per-value confidence exports
+        assert mock_conf.call_count == 2
+        # 1 sweep export
+        mock_sweep.assert_called_once()
 
-            # Setup mocks for sweep exporters
-            mock_sweep_json_instance = Mock()
-            mock_sweep_json_instance.export = AsyncMock(
-                return_value=tmp_path / "sweep.json"
-            )
-            mock_sweep_json.return_value = mock_sweep_json_instance
-
-            mock_sweep_csv_instance = Mock()
-            mock_sweep_csv_instance.export = AsyncMock(
-                return_value=tmp_path / "sweep.csv"
-            )
-            mock_sweep_csv.return_value = mock_sweep_csv_instance
-
-            # Execute
-            orchestrator._export_sweep_aggregates(
-                sample_per_value_aggregates,
-                sample_sweep_aggregate,
-                mock_user_config,
-            )
-
-            # Verify confidence exporters were called for each value
-            assert mock_conf_json_instance.export.call_count == 2
-            assert mock_conf_csv_instance.export.call_count == 2
-
-    def test_export_sweep_aggregates_calls_sweep_exporters(
-        self,
-        mock_service_config,
-        mock_user_config,
-        sample_per_value_aggregates,
-        sample_sweep_aggregate,
-        tmp_path,
-    ):
-        """Test that sweep export calls JSON and CSV exporters."""
-        orchestrator = MultiRunOrchestrator(tmp_path, mock_service_config)
+    def test_repeated_mode_path_structure(self, strategy_repeated, tmp_path):
+        aggregate = self._make_aggregate()
+        exported_paths = []
 
         with (
-            patch(
-                "aiperf.exporters.aggregate.AggregateConfidenceJsonExporter"
-            ) as mock_conf_json,
-            patch(
-                "aiperf.exporters.aggregate.AggregateConfidenceCsvExporter"
-            ) as mock_conf_csv,
-            patch(
-                "aiperf.exporters.aggregate.AggregateSweepJsonExporter"
-            ) as mock_sweep_json,
-            patch(
-                "aiperf.exporters.aggregate.AggregateSweepCsvExporter"
-            ) as mock_sweep_csv,
+            patch("aiperf.orchestrator.export_helpers.export_confidence") as mock_conf,
+            patch("aiperf.orchestrator.export_helpers.export_sweep") as mock_sweep,
         ):
-            # Setup mocks for confidence exporters
-            mock_conf_json_instance = Mock()
-            mock_conf_json_instance.export = AsyncMock(
-                return_value=tmp_path / "conf.json"
-            )
-            mock_conf_json.return_value = mock_conf_json_instance
+            mock_conf.side_effect = lambda agg, path: exported_paths.append(
+                ("conf", path)
+            ) or (path / "a.json", path / "a.csv")
+            mock_sweep.side_effect = lambda agg, path: exported_paths.append(
+                ("sweep", path)
+            ) or (path / "s.json", path / "s.csv")
+            strategy_repeated.export_aggregates(aggregate, tmp_path)
 
-            mock_conf_csv_instance = Mock()
-            mock_conf_csv_instance.export = AsyncMock(
-                return_value=tmp_path / "conf.csv"
-            )
-            mock_conf_csv.return_value = mock_conf_csv_instance
+        # Repeated mode: base_dir/aggregate/concurrency_10, base_dir/aggregate/concurrency_20
+        conf_paths = [p for t, p in exported_paths if t == "conf"]
+        assert tmp_path / "aggregate" / "concurrency_10" in conf_paths
+        assert tmp_path / "aggregate" / "concurrency_20" in conf_paths
 
-            # Setup mocks for sweep exporters
-            mock_sweep_json_instance = Mock()
-            mock_sweep_json_instance.export = AsyncMock(
-                return_value=tmp_path / "sweep.json"
-            )
-            mock_sweep_json.return_value = mock_sweep_json_instance
+        # Sweep: base_dir/aggregate/sweep_aggregate
+        sweep_paths = [p for t, p in exported_paths if t == "sweep"]
+        assert tmp_path / "aggregate" / "sweep_aggregate" in sweep_paths
 
-            mock_sweep_csv_instance = Mock()
-            mock_sweep_csv_instance.export = AsyncMock(
-                return_value=tmp_path / "sweep.csv"
-            )
-            mock_sweep_csv.return_value = mock_sweep_csv_instance
-
-            # Execute
-            orchestrator._export_sweep_aggregates(
-                sample_per_value_aggregates,
-                sample_sweep_aggregate,
-                mock_user_config,
-            )
-
-            # Verify sweep exporters were called
-            mock_sweep_json_instance.export.assert_called_once()
-            mock_sweep_csv_instance.export.assert_called_once()
-
-
-class TestAggregateResults:
-    """Tests for aggregate_results method."""
-
-    @pytest.fixture
-    def mock_service_config(self):
-        """Create a mock service config."""
-        mock_config = Mock(spec=ServiceConfig)
-        mock_config.model_dump.return_value = {}
-        return mock_config
-
-    @pytest.fixture
-    def mock_user_config(self):
-        """Create a mock user config."""
-        config = UserConfig(endpoint=EndpointConfig(model_names=["test-model"]))
-        config.loadgen.num_profile_runs = 5
-        return config
-
-    @pytest.fixture
-    def sample_run_results(self, tmp_path):
-        """Create sample run results."""
-        return [
-            RunResult(
-                label="run_0001",
-                success=True,
-                summary_metrics={},
-                artifacts_path=tmp_path / "run_0001",
-            ),
-            RunResult(
-                label="run_0002",
-                success=True,
-                summary_metrics={},
-                artifacts_path=tmp_path / "run_0002",
-            ),
-        ]
-
-    def test_aggregate_results_confidence_only_mode_returns_aggregate(
-        self, mock_service_config, mock_user_config, sample_run_results, tmp_path
-    ):
-        """Test aggregate_results in confidence-only mode returns aggregate dict."""
-        orchestrator = MultiRunOrchestrator(tmp_path, mock_service_config)
-
-        # Mock the aggregation computation with mutable metadata
-        mock_aggregate = AggregateResult(
-            aggregation_type="confidence",
-            num_runs=2,
-            num_successful_runs=2,
-            failed_runs=[],
-            metadata={},  # This will be a real dict, not a Mock
-            metrics={},
-        )
-
-        with patch(
-            "aiperf.orchestrator.aggregation.confidence.ConfidenceAggregation"
-        ) as mock_agg_class:
-            mock_agg_instance = Mock()
-            mock_agg_instance.aggregate.return_value = mock_aggregate
-            mock_agg_class.return_value = mock_agg_instance
-
-            result = orchestrator.aggregate_results(
-                sample_run_results, mock_user_config
-            )
-
-            # Should return confidence aggregate
-            assert "aggregate" in result
-            assert result["aggregate"] == mock_aggregate
-            # Verify cooldown was added to metadata
-            assert "cooldown_seconds" in result["aggregate"].metadata
-
-    def test_aggregate_results_sweep_mode_returns_per_value_and_sweep_aggregates(
-        self, mock_service_config, tmp_path
-    ):
-        """Test aggregate_results in sweep mode returns per-value and sweep aggregates."""
-        orchestrator = MultiRunOrchestrator(tmp_path, mock_service_config)
-
-        # Create config with sweep parameters (concurrency as list)
-        config = UserConfig(endpoint=EndpointConfig(model_names=["test-model"]))
-        # Set concurrency as a list to trigger sweep mode
-        config.loadgen.concurrency = [10, 20]
-        config.loadgen.num_profile_runs = 3
-
-        # Create run results with sweep metadata - multiple runs per value
-        run_results = [
-            # First value (10) - 2 runs
-            RunResult(
-                label="run_0001",
-                success=True,
-                summary_metrics={},
-                artifacts_path=tmp_path / "concurrency_10" / "run_0001",
-                metadata={"concurrency": 10},
-            ),
-            RunResult(
-                label="run_0002",
-                success=True,
-                summary_metrics={},
-                artifacts_path=tmp_path / "concurrency_10" / "run_0002",
-                metadata={"concurrency": 10},
-            ),
-            # Second value (20) - 2 runs
-            RunResult(
-                label="run_0003",
-                success=True,
-                summary_metrics={},
-                artifacts_path=tmp_path / "concurrency_20" / "run_0001",
-                metadata={"concurrency": 20},
-            ),
-            RunResult(
-                label="run_0004",
-                success=True,
-                summary_metrics={},
-                artifacts_path=tmp_path / "concurrency_20" / "run_0002",
-                metadata={"concurrency": 20},
-            ),
-        ]
-
-        # Mock the aggregation computation with mutable metadata
-        mock_per_value_agg = AggregateResult(
-            aggregation_type="confidence",
-            num_runs=2,
-            num_successful_runs=2,
-            failed_runs=[],
-            metadata={"concurrency": 10},
-            metrics={},
-        )
-
-        mock_sweep_agg = AggregateResult(
-            aggregation_type="sweep",
-            num_runs=4,
-            num_successful_runs=4,
-            failed_runs=[],
-            metadata={},
-            metrics=[],
-        )
+    def test_independent_mode_path_structure(self, strategy_independent, tmp_path):
+        aggregate = self._make_aggregate()
+        exported_paths = []
 
         with (
-            patch(
-                "aiperf.orchestrator.aggregation.confidence.ConfidenceAggregation"
-            ) as mock_conf_agg,
-            patch(
-                "aiperf.orchestrator.aggregation.sweep.SweepAggregation"
-            ) as mock_sweep_agg_class,
+            patch("aiperf.orchestrator.export_helpers.export_confidence") as mock_conf,
+            patch("aiperf.orchestrator.export_helpers.export_sweep") as mock_sweep,
         ):
-            mock_conf_instance = Mock()
-            mock_conf_instance.aggregate.return_value = mock_per_value_agg
-            mock_conf_agg.return_value = mock_conf_instance
+            mock_conf.side_effect = lambda agg, path: exported_paths.append(
+                ("conf", path)
+            ) or (path / "a.json", path / "a.csv")
+            mock_sweep.side_effect = lambda agg, path: exported_paths.append(
+                ("sweep", path)
+            ) or (path / "s.json", path / "s.csv")
+            strategy_independent.export_aggregates(aggregate, tmp_path)
 
-            mock_sweep_instance = Mock()
-            mock_sweep_instance.compute.return_value = mock_sweep_agg
-            mock_sweep_agg_class.return_value = mock_sweep_instance
+        # Independent mode: base_dir/concurrency_10/aggregate, base_dir/concurrency_20/aggregate
+        conf_paths = [p for t, p in exported_paths if t == "conf"]
+        assert tmp_path / "concurrency_10" / "aggregate" in conf_paths
+        assert tmp_path / "concurrency_20" / "aggregate" in conf_paths
 
-            result = orchestrator.aggregate_results(run_results, config)
-
-            # Should return both per-value and sweep aggregates
-            assert "per_value_aggregates" in result
-            assert "sweep_aggregate" in result
-
-    def test_aggregate_results_empty_results_returns_empty(
-        self, mock_service_config, mock_user_config, tmp_path
-    ):
-        """Test aggregate_results with empty results returns empty dict."""
-        orchestrator = MultiRunOrchestrator(tmp_path, mock_service_config)
-
-        result = orchestrator.aggregate_results([], mock_user_config)
-
-        # Should return empty dict for empty results
-        assert result == {}
-
-
-class TestCollectFailedSweepValues:
-    """Tests for _collect_failed_sweep_values method."""
-
-    @pytest.fixture
-    def mock_service_config(self):
-        """Create a mock service config."""
-        mock_config = Mock(spec=ServiceConfig)
-        mock_config.model_dump.return_value = {}
-        return mock_config
-
-    def test_collect_failed_sweep_values_no_failures_returns_empty(
-        self, mock_service_config, tmp_path
-    ):
-        """Test _collect_failed_sweep_values with no failures."""
-        orchestrator = MultiRunOrchestrator(tmp_path, mock_service_config)
-
-        results = [
-            RunResult(
-                label="run_0001",
-                success=True,
-                summary_metrics={},
-                artifacts_path=tmp_path / "run_0001",
-                metadata={"concurrency": 10},
-            ),
-            RunResult(
-                label="run_0002",
-                success=True,
-                summary_metrics={},
-                artifacts_path=tmp_path / "run_0002",
-                metadata={"concurrency": 20},
-            ),
-        ]
-
-        failed_values = orchestrator._collect_failed_sweep_values(results)
-
-        assert failed_values == []
-
-    def test_collect_failed_sweep_values_with_failures_collects_values(
-        self, mock_service_config, tmp_path
-    ):
-        """Test _collect_failed_sweep_values collects failed values."""
-        orchestrator = MultiRunOrchestrator(tmp_path, mock_service_config)
-
-        results = [
-            RunResult(
-                label="run_0001",
-                success=True,
-                summary_metrics={},
-                artifacts_path=tmp_path / "run_0001",
-                metadata={"concurrency": 10},
-            ),
-            RunResult(
-                label="run_0002",
-                success=False,
-                summary_metrics={},
-                artifacts_path=tmp_path / "run_0002",
-                metadata={"concurrency": 20},
-                error="Connection timeout",
-            ),
-        ]
-
-        failed_values = orchestrator._collect_failed_sweep_values(results)
-
-        assert len(failed_values) == 1
-        assert failed_values[0]["value"] == 20
-        assert "timestamp" in failed_values[0]
-
-    def test_collect_failed_sweep_values_deduplicates_same_value(
-        self, mock_service_config, tmp_path
-    ):
-        """Test _collect_failed_sweep_values deduplicates multiple failures at same value."""
-        orchestrator = MultiRunOrchestrator(tmp_path, mock_service_config)
-
-        results = [
-            RunResult(
-                label="run_0001",
-                success=False,
-                summary_metrics={},
-                artifacts_path=tmp_path / "run_0001",
-                metadata={"concurrency": 20},
-                error="Error 1",
-            ),
-            RunResult(
-                label="run_0002",
-                success=False,
-                summary_metrics={},
-                artifacts_path=tmp_path / "run_0002",
-                metadata={"concurrency": 20},
-                error="Error 2",
-            ),
-            RunResult(
-                label="run_0003",
-                success=False,
-                summary_metrics={},
-                artifacts_path=tmp_path / "run_0003",
-                metadata={"concurrency": 20},
-                error="Error 3",
-            ),
-        ]
-
-        failed_values = orchestrator._collect_failed_sweep_values(results)
-
-        # Should only report the value once
-        assert len(failed_values) == 1
-        assert failed_values[0]["value"] == 20
-
-    def test_collect_failed_sweep_values_ignores_non_sweep_failures(
-        self, mock_service_config, tmp_path
-    ):
-        """Test _collect_failed_sweep_values ignores failures without sweep metadata."""
-        orchestrator = MultiRunOrchestrator(tmp_path, mock_service_config)
-
-        results = [
-            RunResult(
-                label="run_0001",
-                success=False,
-                summary_metrics={},
-                artifacts_path=tmp_path / "run_0001",
-                metadata={"concurrency": 20},
-                error="Sweep error",
-            ),
-            RunResult(
-                label="run_0002",
-                success=False,
-                summary_metrics={},
-                artifacts_path=tmp_path / "run_0002",
-                metadata={},  # No sweep metadata
-                error="Non-sweep error",
-            ),
-        ]
-
-        failed_values = orchestrator._collect_failed_sweep_values(results)
-
-        # Should only collect the sweep failure
-        assert len(failed_values) == 1
-        assert failed_values[0]["value"] == 20
+        # Sweep: base_dir/sweep_aggregate
+        sweep_paths = [p for t, p in exported_paths if t == "sweep"]
+        assert tmp_path / "sweep_aggregate" in sweep_paths

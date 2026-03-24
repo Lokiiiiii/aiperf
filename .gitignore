@@ -10,6 +10,8 @@ htmlcov/
 .pytest_cache/
 .ruff_cache/
 .mypy_cache/
+.hypothesis/
+.kiro/
 .env
 .env.*
 *.log
@@ -31,3 +33,7 @@ src/aiperf/plugin/enums.pyi
 # Claude Code - ignore user settings, keep agent configs
 .claude/*
 !.claude/agents/
+
+# Cursor - ignore user settings
+.cursor/*
+!.cursor/rules/

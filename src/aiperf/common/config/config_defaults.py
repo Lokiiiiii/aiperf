@@ -47,6 +47,7 @@ class EndpointDefaults:
     USE_SERVER_TOKEN_COUNT = False
     CONNECTION_REUSE_STRATEGY = ConnectionReuseStrategy.POOLED
     DOWNLOAD_VIDEO_CONTENT = False
+    REQUEST_CONTENT_TYPE = None
 
 
 @dataclass(frozen=True)
@@ -108,6 +109,14 @@ class VideoDefaults:
     SYNTH_TYPE = VideoSynthType.MOVING_SHAPES
     FORMAT = VideoFormat.WEBM
     CODEC = "libvpx-vp9"
+
+
+@dataclass(frozen=True)
+class VideoAudioDefaults:
+    SAMPLE_RATE = 44100
+    CHANNELS = 0
+    CODEC = None
+    DEPTH = 16
 
 
 @dataclass(frozen=True)

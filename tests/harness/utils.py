@@ -86,6 +86,10 @@ class VideoDetails:
     fps: float
     pix_fmt: str | None = None
     is_fragmented: bool = False
+    has_audio: bool = False
+    audio_codec: str | None = None
+    audio_sample_rate: int | None = None
+    audio_channels: int | None = None
 
 
 class AIPerfResults:
@@ -574,6 +578,14 @@ class AIPerfCLI:
     ) -> None:
         """Raise detailed error for failed AIPerf run."""
         error_parts = [f"AIPerf process failed with exit code {result.exit_code}\n"]
+
+        # Include stderr if available
+        if result.stderr:
+            error_parts.append(f"\n{'=' * 80}\nSTDERR:\n{'=' * 80}\n{result.stderr}\n")
+
+        # Include stdout if available
+        if result.stdout:
+            error_parts.append(f"\n{'=' * 80}\nSTDOUT:\n{'=' * 80}\n{result.stdout}\n")
 
         if hasattr(perf_results, "log") and perf_results.log:
             error_parts.append(

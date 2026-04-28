@@ -11,6 +11,7 @@ from aiperf.common.models import (
     ParsedResponse,
     ReasoningResponseData,
     RequestInfo,
+    ToolCallResponseData,
     Turn,
 )
 from aiperf.common.types import JsonObject
@@ -40,15 +41,22 @@ class ChatEndpoint(BaseEndpoint):
 
         turns = request_info.turns
         model_endpoint = request_info.model_endpoint
-        messages = self._create_messages(
-            turns, request_info.system_message, request_info.user_context_message
-        )
+
+        if turns[-1].raw_messages is not None:
+            messages = turns[-1].raw_messages
+        else:
+            messages = self._create_messages(
+                turns, request_info.system_message, request_info.user_context_message
+            )
 
         payload = {
             "messages": messages,
             "model": turns[-1].model or model_endpoint.primary_model_name,
             "stream": model_endpoint.endpoint.streaming,
         }
+
+        if turns[-1].raw_tools is not None:
+            payload["tools"] = turns[-1].raw_tools
 
         if turns[-1].max_tokens is not None:
             token_field = (
@@ -130,7 +138,6 @@ class ChatEndpoint(BaseEndpoint):
             and len(turn.videos) == 0
         ):
             # Hotfix for Dynamo API which does not yet support a list of messages
-            message["name"] = turn.texts[0].name
             message["content"] = (
                 turn.texts[0].contents[0] if turn.texts[0].contents else ""
             )
@@ -238,13 +245,25 @@ class ChatEndpoint(BaseEndpoint):
 
         content = data.get("content")
         reasoning = data.get("reasoning_content") or data.get("reasoning")
-        if not content and not reasoning:
-            return None
 
-        if not reasoning:
+        if reasoning:
+            return ReasoningResponseData(content=content, reasoning=reasoning)
+
+        if content:
             return self.make_text_response_data(content)
 
-        return ReasoningResponseData(
-            content=content,
-            reasoning=reasoning,
-        )
+        tool_calls = data.get("tool_calls") or []
+        tool_call_parts: list[str] = []
+        for tc in tool_calls:
+            func = tc.get("function", {})
+            name = func.get("name", "")
+            arguments = func.get("arguments", "")
+            if name:
+                tool_call_parts.append(name)
+            if arguments:
+                tool_call_parts.append(arguments)
+        tool_call_text = "".join(tool_call_parts)
+        if tool_call_text:
+            return ToolCallResponseData(text=tool_call_text)
+
+        return None

@@ -3,7 +3,10 @@
 
 import sys
 from pathlib import Path
-from typing import Annotated, Any
+from typing import TYPE_CHECKING, Annotated, Any
+
+if TYPE_CHECKING:
+    from aiperf.plugin.schema.schemas import EndpointMetadata
 
 from orjson import JSONDecodeError
 from pydantic import BeforeValidator, Field, model_validator
@@ -26,9 +29,9 @@ from aiperf.common.config.output_config import OutputConfig
 from aiperf.common.config.tokenizer_config import TokenizerConfig
 from aiperf.common.enums import GPUTelemetryMode, ServerMetricsFormat
 from aiperf.common.utils import load_json_str
+from aiperf.plugin import plugins
 from aiperf.plugin.enums import (
     ArrivalPattern,
-    CustomDatasetType,
     EndpointType,
     GPUTelemetryCollectorType,
     TimingMode,
@@ -66,14 +69,28 @@ class UserConfig(BaseConfig):
 
     _timing_mode: TimingMode = TimingMode.REQUEST_RATE
 
+    def _endpoint_metadata(self) -> "EndpointMetadata":
+        """Get the endpoint metadata for the current endpoint type."""
+        try:
+            return self._cached_endpoint_metadata
+        except AttributeError:
+            from aiperf.plugin import plugins
+
+            meta = plugins.get_endpoint_metadata(self.endpoint.type)
+            self._cached_endpoint_metadata = meta
+            return meta
+
     @model_validator(mode="after")
     def validate_cli_args(self) -> Self:
         """Set the CLI command based on the command line arguments, if it has not already been set."""
         if not self.cli_command:
+            from aiperf.common.redact import redact_cli_command
+
             args = [coerce_value(x) for x in sys.argv[1:]]
             # Note: Use single quotes to avoid conflicts with double quotes in arguments.
             args = [f"'{x}'" if _should_quote_arg(x) else str(x) for x in args]
-            self.cli_command = " ".join(["aiperf", *args])
+            cmd = " ".join(["aiperf", *args])
+            self.cli_command = redact_cli_command(cmd)
         return self
 
     @model_validator(mode="after")
@@ -104,10 +121,10 @@ class UserConfig(BaseConfig):
                 _logger.info(
                     f"No request count value provided for fixed schedule mode, setting to dataset entry count: {self.loadgen.request_count}"
                 )
-        elif self._should_use_fixed_schedule_for_mooncake_trace():
+        elif self._should_use_fixed_schedule_for_trace_dataset():
             self._timing_mode = TimingMode.FIXED_SCHEDULE
             _logger.info(
-                "Automatically enabling fixed schedule mode for mooncake_trace dataset with timestamps"
+                f"Automatically enabling fixed schedule mode for {self.input.custom_dataset_type} dataset with timestamps"
             )
             if (
                 self.loadgen.request_count is None
@@ -115,7 +132,7 @@ class UserConfig(BaseConfig):
             ):
                 self.loadgen.request_count = self._count_dataset_entries()
                 _logger.info(
-                    f"No request count value provided for mooncake trace dataset, setting to dataset entry count: {self.loadgen.request_count}"
+                    f"No request count value provided for trace dataset, setting to dataset entry count: {self.loadgen.request_count}"
                 )
         elif self.loadgen.user_centric_rate is not None:
             # User-centric rate mode: per-user rate limiting (LMBenchmark parity)
@@ -334,13 +351,50 @@ class UserConfig(BaseConfig):
 
         return self
 
-    def _should_use_fixed_schedule_for_mooncake_trace(self) -> bool:
-        """Check if mooncake_trace dataset has timestamps and should use fixed schedule.
+    @model_validator(mode="after")
+    def validate_sweep_incompatibilities(self) -> Self:
+        """Validate that parameter sweeps are not combined with incompatible modes.
+
+        Raises:
+            ValueError: If parameter sweep is combined with fixed schedule mode.
+        """
+        # Use parameter-agnostic sweep detection
+        sweep_param = self.loadgen.get_sweep_parameter()
+        is_sweep = sweep_param is not None
+
+        if is_sweep:
+            # Check for fixed schedule mode incompatibility
+            # Fixed schedule mode is incompatible because it replays exact timing patterns
+            # from a trace file, which doesn't make sense when varying concurrency
+            if self.input.fixed_schedule:
+                param_name, param_values = sweep_param
+                raise ValueError(
+                    f"Parameter sweeps (e.g., --{param_name} {','.join(map(str, param_values))}) cannot be used with --fixed-schedule mode. "
+                    "Fixed schedule replays exact timing patterns from trace files, which is incompatible with "
+                    "varying parameter values. Use a single parameter value or remove --fixed-schedule."
+                )
+
+            # Also check if trace dataset will auto-enable fixed schedule
+            if self._should_use_fixed_schedule_for_trace_dataset():
+                param_name, param_values = sweep_param
+                raise ValueError(
+                    f"Parameter sweeps (e.g., --{param_name} {','.join(map(str, param_values))}) cannot be used with mooncake_trace datasets "
+                    "that have timestamps (which auto-enable fixed schedule mode). "
+                    "Fixed schedule replays exact timing patterns from trace files, which is incompatible with "
+                    "varying parameter values. Use a single parameter value or use a dataset without timestamps."
+                )
+
+        return self
+
+    def _should_use_fixed_schedule_for_trace_dataset(self) -> bool:
+        """Check if a trace dataset has timestamps and should use fixed schedule.
 
         Returns:
-            bool: True if fixed schedule should be enabled for this mooncake trace
+            True if fixed schedule should be enabled for this trace dataset.
         """
-        if self.input.custom_dataset_type != CustomDatasetType.MOONCAKE_TRACE:
+        if self.input.custom_dataset_type is None or not plugins.is_trace_dataset(
+            self.input.custom_dataset_type
+        ):
             return False
 
         if not self.input.file:
@@ -711,10 +765,7 @@ class UserConfig(BaseConfig):
 
     def _get_artifact_service_kind(self) -> str:
         """Get the service kind name based on the endpoint config."""
-        # Lazy import to avoid circular dependency
-        from aiperf.plugin import plugins
-
-        metadata = plugins.get_endpoint_metadata(self.endpoint.type)
+        metadata = self._endpoint_metadata()
         return f"{metadata.service_kind}-{self.endpoint.type}"
 
     def _get_artifact_stimulus(self) -> str:
@@ -723,7 +774,12 @@ class UserConfig(BaseConfig):
             case TimingMode.REQUEST_RATE:
                 stimulus = []
                 if self.loadgen.concurrency is not None:
-                    stimulus.append(f"concurrency{self.loadgen.concurrency}")
+                    if isinstance(self.loadgen.concurrency, list):
+                        stimulus.append(
+                            f"concurrency_sweep_{'_'.join(map(str, self.loadgen.concurrency))}"
+                        )
+                    else:
+                        stimulus.append(f"concurrency{self.loadgen.concurrency}")
                 if self.loadgen.request_rate is not None:
                     stimulus.append(f"request_rate{self.loadgen.request_rate}")
                 return "-".join(stimulus)
@@ -775,26 +831,31 @@ class UserConfig(BaseConfig):
         if self.loadgen.concurrency is None:
             return self
 
+        # Get concurrency values to check (handle both int and list)
+        concurrency_values = (
+            [self.loadgen.concurrency]
+            if isinstance(self.loadgen.concurrency, int)
+            else self.loadgen.concurrency
+        )
+
         # For multi-turn scenarios, check against conversation_num
-        if (
-            self.input.conversation.num is not None
-            and self.loadgen.concurrency > self.input.conversation.num
-        ):
-            raise ValueError(
-                f"Concurrency ({self.loadgen.concurrency}) cannot be greater than "
-                f"the number of conversations ({self.input.conversation.num}). "
-                "Either reduce --concurrency or increase --conversation-num."
-            )
+        if self.input.conversation.num is not None:
+            for concurrency in concurrency_values:
+                if concurrency > self.input.conversation.num:
+                    raise ValueError(
+                        f"Concurrency ({concurrency}) cannot be greater than "
+                        f"the number of conversations ({self.input.conversation.num}). "
+                        "Either reduce --concurrency or increase --conversation-num."
+                    )
         # For single-turn scenarios, check against request_count if it is set
-        elif (
-            self.loadgen.request_count is not None
-            and self.loadgen.concurrency > self.loadgen.request_count
-        ):
-            raise ValueError(
-                f"Concurrency ({self.loadgen.concurrency}) cannot be greater than "
-                f"the request count ({self.loadgen.request_count}). Either reduce "
-                "--concurrency or increase --request-count."
-            )
+        elif self.loadgen.request_count is not None:
+            for concurrency in concurrency_values:
+                if concurrency > self.loadgen.request_count:
+                    raise ValueError(
+                        f"Concurrency ({concurrency}) cannot be greater than "
+                        f"the request count ({self.loadgen.request_count}). Either reduce "
+                        "--concurrency or increase --request-count."
+                    )
 
         return self
 
@@ -822,33 +883,42 @@ class UserConfig(BaseConfig):
             )
 
         # Validate prefill_concurrency <= concurrency
-        if (
-            prefill_concurrency is not None
-            and self.loadgen.concurrency is not None
-            and prefill_concurrency > self.loadgen.concurrency
-        ):
-            raise ValueError(
-                f"--prefill-concurrency ({prefill_concurrency}) cannot be greater than "
-                f"--concurrency ({self.loadgen.concurrency}). "
-                "Prefill concurrency limits how many requests can be in the prefill stage, "
-                "which cannot exceed the total concurrent requests."
+        # For sweep mode, check against all concurrency values
+        if prefill_concurrency is not None and self.loadgen.concurrency is not None:
+            concurrency_values = (
+                [self.loadgen.concurrency]
+                if isinstance(self.loadgen.concurrency, int)
+                else self.loadgen.concurrency
             )
+            for concurrency in concurrency_values:
+                if prefill_concurrency > concurrency:
+                    raise ValueError(
+                        f"--prefill-concurrency ({prefill_concurrency}) cannot be greater than "
+                        f"--concurrency ({concurrency}). "
+                        "Prefill concurrency limits how many requests can be in the prefill stage, "
+                        "which cannot exceed the total concurrent requests."
+                    )
 
         # Validate warmup_prefill_concurrency <= warmup_concurrency (or concurrency)
         if warmup_prefill_concurrency is not None:
             effective_warmup_concurrency = (
                 self.loadgen.warmup_concurrency or self.loadgen.concurrency
             )
-            if (
-                effective_warmup_concurrency is not None
-                and warmup_prefill_concurrency > effective_warmup_concurrency
-            ):
-                raise ValueError(
-                    f"--warmup-prefill-concurrency ({warmup_prefill_concurrency}) cannot be "
-                    f"greater than warmup concurrency ({effective_warmup_concurrency}). "
-                    "Prefill concurrency limits how many requests can be in the prefill stage, "
-                    "which cannot exceed the total concurrent requests."
+            if effective_warmup_concurrency is not None:
+                # Handle list concurrency for warmup
+                warmup_concurrency_values = (
+                    [effective_warmup_concurrency]
+                    if isinstance(effective_warmup_concurrency, int)
+                    else effective_warmup_concurrency
                 )
+                for warmup_concurrency in warmup_concurrency_values:
+                    if warmup_prefill_concurrency > warmup_concurrency:
+                        raise ValueError(
+                            f"--warmup-prefill-concurrency ({warmup_prefill_concurrency}) cannot be "
+                            f"greater than warmup concurrency ({warmup_concurrency}). "
+                            "Prefill concurrency limits how many requests can be in the prefill stage, "
+                            "which cannot exceed the total concurrent requests."
+                        )
 
         return self
 
@@ -956,6 +1026,71 @@ class UserConfig(BaseConfig):
                 f"Rankings endpoints: ({', '.join(rankings_endpoints)})."
                 "Please use only one set of options."
             )
+        return self
+
+    @model_validator(mode="after")
+    def default_no_text_for_non_tokenizing_endpoints(self) -> Self:
+        """Reject explicit text options and zero out text defaults for non-tokenizing
+        endpoints (e.g., image_retrieval)."""
+        metadata = self._endpoint_metadata()
+        if metadata.tokenizes_input:
+            return self
+
+        def err(option: str) -> ValueError:
+            return ValueError(
+                f"{option} cannot be used with "
+                f"--endpoint-type {self.endpoint.type} because it does not "
+                "support text input."
+            )
+
+        if (
+            "mean" in self.input.prompt.input_tokens.model_fields_set
+            and self.input.prompt.input_tokens.mean > 0
+        ):
+            raise err("--synthetic-input-tokens-mean")
+        else:
+            self.input.prompt.input_tokens.mean = 0
+
+        if (
+            "stddev" in self.input.prompt.input_tokens.model_fields_set
+            and self.input.prompt.input_tokens.stddev > 0
+        ):
+            raise err("--synthetic-input-tokens-stddev")
+        else:
+            self.input.prompt.input_tokens.stddev = 0
+
+        if (
+            "batch_size" in self.input.prompt.model_fields_set
+            and self.input.prompt.batch_size > 0
+        ):
+            raise err("--batch-size-text")
+        else:
+            self.input.prompt.batch_size = 0
+
+        if self.input.prompt.sequence_distribution is not None:
+            raise err("--sequence-distribution")
+
+        if self.input.prompt.prefix_prompt.model_fields_set:
+            raise err("Prefix prompt options")
+
+        return self
+
+    @model_validator(mode="after")
+    def reject_tokenizer_for_non_token_endpoints(self) -> Self:
+        """Reject --tokenizer* flags when the endpoint neither tokenizes input nor
+        produces tokens."""
+        metadata = self._endpoint_metadata()
+        if metadata.tokenizes_input or metadata.produces_tokens:
+            return self
+
+        user_set = self.tokenizer.model_fields_set - {"resolved_names"}
+        if user_set:
+            raise ValueError(
+                "Tokenizer options cannot be used with "
+                f"--endpoint-type {self.endpoint.type} because it does not "
+                "tokenize input or produce tokens."
+            )
+
         return self
 
     @model_validator(mode="after")

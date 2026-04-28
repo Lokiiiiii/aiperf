@@ -54,12 +54,12 @@ from aiperf.common.models.model_endpoint_info import (
 )
 from aiperf.common.models.progress_models import WorkerProcessingStats, WorkerStats
 from aiperf.common.models.record_models import (
-    BaseInferenceServerResponse,
     BaseResponseData,
     BinaryResponse,
     EmbeddingResponseData,
     ImageDataItem,
     ImageResponseData,
+    ImageRetrievalResponseData,
     InferenceServerResponse,
     MetricRecordInfo,
     MetricRecordMetadata,
@@ -80,6 +80,7 @@ from aiperf.common.models.record_models import (
     TextResponse,
     TextResponseData,
     TokenCounts,
+    ToolCallResponseData,
     VideoResponseData,
 )
 from aiperf.common.models.sequence_distribution import (
@@ -141,7 +142,6 @@ __all__ = [
     "AioHttpTraceDataExport",
     "Audio",
     "AutoRoutedModel",
-    "BaseInferenceServerResponse",
     "BasePhaseStats",
     "BaseResponseData",
     "BaseSeries",
@@ -184,6 +184,7 @@ __all__ = [
     "Image",
     "ImageDataItem",
     "ImageResponseData",
+    "ImageRetrievalResponseData",
     "InferenceServerResponse",
     "InputsFile",
     "JsonExportData",
@@ -239,6 +240,7 @@ __all__ = [
     "TimesliceCollectionExportData",
     "TimesliceData",
     "TokenCounts",
+    "ToolCallResponseData",
     "TraceDataExport",
     "Turn",
     "TurnMetadata",

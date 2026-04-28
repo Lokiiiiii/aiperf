@@ -154,7 +154,7 @@ def identify_pareto_optimal(
     return sorted(pareto_optimal, key=lambda c: tuple(sorted(c.parameters.items())))
 
 
-class SweepAggregation:
+class SweepAnalyzer:
     """Compute sweep-level statistics and analysis."""
 
     @staticmethod
@@ -202,7 +202,7 @@ class SweepAggregation:
             ...     {"name": "concurrency", "values": [2, 4]},
             ...     {"name": "request_rate", "values": [10]},
             ... ]
-            >>> result = SweepAggregation.compute(per_combination_stats, sweep_params)
+            >>> result = SweepAnalyzer.compute(per_combination_stats, sweep_params)
             >>> result["metadata"]["num_combinations"]
             2
         """
@@ -244,9 +244,7 @@ class SweepAggregation:
                 }
 
             # Best latency: check TTFT aliases then request_latency_p99
-            latency_metric = SweepAggregation._resolve_latency_key(
-                per_combination_stats
-            )
+            latency_metric = SweepAnalyzer._resolve_latency_key(per_combination_stats)
 
             if latency_metric:
                 best_latency_combo, best_latency_stats = min(
@@ -262,7 +260,7 @@ class SweepAggregation:
         # Identify Pareto optimal configurations
         pareto_optimal = []
         if per_combination_stats:
-            latency_key = SweepAggregation._resolve_latency_key(per_combination_stats)
+            latency_key = SweepAnalyzer._resolve_latency_key(per_combination_stats)
             has_throughput = all(
                 "request_throughput_avg" in stats
                 for stats in per_combination_stats.values()

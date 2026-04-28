@@ -2943,3 +2943,76 @@ class TestParameterSweep:
         for config in pareto:
             assert isinstance(config, dict)
             assert "concurrency" in config
+
+    async def test_sweep_with_cooldown_flag_succeeds(
+        self,
+        cli: AIPerfCLI,
+        aiperf_mock_server: AIPerfMockServer,
+        temp_output_dir: Path,
+    ):
+        """Test that --parameter-sweep-cooldown-seconds does not break sweep runs.
+
+        Regression test for ship-blocker where parameter_sweep_cooldown_seconds
+        persisted in model_fields_set through subprocess serialization, causing
+        the inner subprocess validator to reject it (concurrency is int, not list,
+        so is_sweep=False and the validator raises).
+        """
+        result = await cli.run(
+            f"""
+            aiperf profile \
+                --model {defaults.model} \
+                --url {aiperf_mock_server.url} \
+                --endpoint-type chat \
+                --concurrency 2,4 \
+                --parameter-sweep-cooldown-seconds 1 \
+                --request-count 10 \
+                --workers-max {defaults.workers_max} \
+                --ui {defaults.ui}
+            """
+        )
+
+        assert result.exit_code == 0
+
+        # Verify both sweep values produced artifacts
+        for val in [2, 4]:
+            json_file = (
+                temp_output_dir / f"concurrency_{val}" / "profile_export_aiperf.json"
+            )
+            assert json_file.exists(), (
+                f"concurrency_{val} should have artifacts (cooldown flag must not break subprocess)"
+            )
+
+    async def test_sweep_with_same_seed_flag_succeeds(
+        self,
+        cli: AIPerfCLI,
+        aiperf_mock_server: AIPerfMockServer,
+        temp_output_dir: Path,
+    ):
+        """Test that --parameter-sweep-same-seed does not break sweep runs.
+
+        Regression test for ship-blocker where parameter_sweep_same_seed
+        persisted in model_fields_set through subprocess serialization.
+        """
+        result = await cli.run(
+            f"""
+            aiperf profile \
+                --model {defaults.model} \
+                --url {aiperf_mock_server.url} \
+                --endpoint-type chat \
+                --concurrency 2,4 \
+                --parameter-sweep-same-seed \
+                --request-count 10 \
+                --workers-max {defaults.workers_max} \
+                --ui {defaults.ui}
+            """
+        )
+
+        assert result.exit_code == 0
+
+        for val in [2, 4]:
+            json_file = (
+                temp_output_dir / f"concurrency_{val}" / "profile_export_aiperf.json"
+            )
+            assert json_file.exists(), (
+                f"concurrency_{val} should have artifacts (same-seed flag must not break subprocess)"
+            )

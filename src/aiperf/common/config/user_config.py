@@ -774,7 +774,12 @@ class UserConfig(BaseConfig):
             case TimingMode.REQUEST_RATE:
                 stimulus = []
                 if self.loadgen.concurrency is not None:
-                    stimulus.append(f"concurrency{self.loadgen.concurrency}")
+                    if isinstance(self.loadgen.concurrency, list):
+                        stimulus.append(
+                            f"concurrency_sweep_{'_'.join(map(str, self.loadgen.concurrency))}"
+                        )
+                    else:
+                        stimulus.append(f"concurrency{self.loadgen.concurrency}")
                 if self.loadgen.request_rate is not None:
                     stimulus.append(f"request_rate{self.loadgen.request_rate}")
                 return "-".join(stimulus)

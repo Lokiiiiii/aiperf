@@ -836,6 +836,41 @@ class TestParameterSweepStrategy:
         new_config = strategy.get_next_config(config, [])
         assert new_config.input.random_seed is None
 
+    def test_get_next_config_scrubs_sweep_params_from_model_fields_set(self):
+        """Test that get_next_config removes all parameter_sweep_* fields from model_fields_set.
+
+        Regression test: these fields persisted through subprocess serialization,
+        causing the inner subprocess validator to reject them because concurrency
+        is an int (not a list) in the per-value config.
+        """
+        from aiperf.orchestrator.strategies import ParameterSweepStrategy
+
+        strategy = ParameterSweepStrategy(
+            parameter_name="concurrency", parameter_values=[10, 20]
+        )
+
+        config = UserConfig(endpoint=EndpointConfig(model_names=["test-model"]))
+        config.loadgen.concurrency = [10, 20]
+        config.loadgen.parameter_sweep_mode = "repeated"
+        config.loadgen.parameter_sweep_cooldown_seconds = 5.0
+        config.loadgen.parameter_sweep_same_seed = True
+        config.loadgen.model_fields_set.add("parameter_sweep_mode")
+        config.loadgen.model_fields_set.add("parameter_sweep_cooldown_seconds")
+        config.loadgen.model_fields_set.add("parameter_sweep_same_seed")
+
+        new_config = strategy.get_next_config(config, [])
+
+        assert new_config.loadgen.concurrency == 10
+        assert new_config.loadgen.parameter_sweep_mode == "repeated"
+        assert new_config.loadgen.parameter_sweep_cooldown_seconds == 0.0
+        assert new_config.loadgen.parameter_sweep_same_seed is False
+        assert "parameter_sweep_mode" not in new_config.loadgen.model_fields_set
+        assert (
+            "parameter_sweep_cooldown_seconds"
+            not in new_config.loadgen.model_fields_set
+        )
+        assert "parameter_sweep_same_seed" not in new_config.loadgen.model_fields_set
+
     def test_get_run_label_formats_correctly(self):
         """Test get_run_label formats parameter name and value correctly."""
         from aiperf.orchestrator.strategies import ParameterSweepStrategy

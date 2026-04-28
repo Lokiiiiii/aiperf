@@ -255,6 +255,28 @@ class TestUserConfigDefaults:
 
         assert config._compute_artifact_directory() == Path(expected_dir)
 
+    def test_compute_artifact_directory_with_concurrency_list(self, monkeypatch):
+        """Test artifact directory uses concurrency_sweep_ prefix for list concurrency.
+
+        Regression test: list concurrency previously rendered as
+        'concurrency[2, 4, 8]' with shell-hostile brackets and spaces.
+        """
+        endpoint = make_endpoint(
+            endpoint_type=EndpointType.CHAT,
+            model_names=["test-model"],
+            streaming=True,
+            url="http://custom-url",
+        )
+        output = OutputConfig(artifact_directory=Path("/tmp/artifacts"))
+        loadgen = LoadGeneratorConfig(concurrency=[2, 4, 8], request_count=100)
+
+        config = UserConfig(endpoint=endpoint, output=output, loadgen=loadgen)
+
+        artifact_dir = str(config._compute_artifact_directory())
+        assert "concurrency_sweep_2_4_8" in artifact_dir
+        assert "[" not in artifact_dir
+        assert "]" not in artifact_dir
+
 
 # =============================================================================
 # GPU Telemetry Configuration Tests
@@ -1712,10 +1734,11 @@ class TestConcurrencyListParsing:
             LoadGeneratorConfig.model_validate({"concurrency": "10,abc,30"})
         assert "Invalid concurrency list" in str(exc_info.value)
 
-    def test_parse_concurrency_duplicate_values_allowed(self):
-        """Test that duplicate values in list are allowed."""
-        config = LoadGeneratorConfig.model_validate({"concurrency": "10,20,10,30"})
-        assert config.concurrency == [10, 20, 10, 30]
+    def test_parse_concurrency_duplicate_values_raises_error(self):
+        """Test that duplicate values in list are rejected."""
+        with pytest.raises(ValidationError) as exc_info:
+            LoadGeneratorConfig.model_validate({"concurrency": "10,20,10,30"})
+        assert "Duplicate values" in str(exc_info.value)
 
     def test_parse_concurrency_empty_string_raises_error(self):
         """Test that empty string raises ValueError."""

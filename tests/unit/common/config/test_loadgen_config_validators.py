@@ -139,10 +139,11 @@ class TestConcurrencyListValidation:
         config = LoadGeneratorConfig(concurrency=[10, 20, 30, 40])
         assert config.concurrency == [10, 20, 30, 40]
 
-    def test_concurrency_list_with_duplicates_succeeds(self):
-        """Test that concurrency list with duplicate values succeeds."""
-        config = LoadGeneratorConfig(concurrency=[10, 20, 10, 30])
-        assert config.concurrency == [10, 20, 10, 30]
+    def test_concurrency_list_with_duplicates_raises_error(self):
+        """Test that concurrency list with duplicate values raises ValueError."""
+        with pytest.raises(ValidationError) as exc_info:
+            LoadGeneratorConfig(concurrency=[10, 20, 10, 30])
+        assert "Duplicate values" in str(exc_info.value)
 
     def test_concurrency_list_single_value_raises_error(self):
         """Test that concurrency list with single value raises ValueError.

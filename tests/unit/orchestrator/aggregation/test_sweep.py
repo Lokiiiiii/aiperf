@@ -755,12 +755,12 @@ class TestIdentifyParetoOptimal:
         assert set(result) == {combo1, combo3, combo5, combo6}
 
 
-class TestSweepAggregation:
-    """Tests for SweepAggregation class."""
+class TestSweepAnalyzer:
+    """Tests for SweepAnalyzer class."""
 
     def test_compute_returns_dict_with_required_keys(self):
         """Test that compute() returns a dict with all required keys."""
-        from aiperf.orchestrator.aggregation import SweepAggregation
+        from aiperf.orchestrator.aggregation import SweepAnalyzer
 
         combo1 = ParameterCombination({"concurrency": 10})
         combo2 = ParameterCombination({"concurrency": 20})
@@ -776,7 +776,7 @@ class TestSweepAggregation:
         }
         sweep_parameters = [{"name": "concurrency", "values": [10, 20]}]
 
-        result = SweepAggregation.compute(per_combination_stats, sweep_parameters)
+        result = SweepAnalyzer.compute(per_combination_stats, sweep_parameters)
 
         # Verify all required keys are present
         assert "metadata" in result
@@ -786,7 +786,7 @@ class TestSweepAggregation:
 
     def test_metadata_section_structure(self):
         """Test that metadata section has correct structure."""
-        from aiperf.orchestrator.aggregation import SweepAggregation
+        from aiperf.orchestrator.aggregation import SweepAnalyzer
 
         combo1 = ParameterCombination({"concurrency": 10})
         combo2 = ParameterCombination({"concurrency": 20})
@@ -798,7 +798,7 @@ class TestSweepAggregation:
         }
         sweep_parameters = [{"name": "concurrency", "values": [10, 20, 30]}]
 
-        result = SweepAggregation.compute(per_combination_stats, sweep_parameters)
+        result = SweepAnalyzer.compute(per_combination_stats, sweep_parameters)
 
         metadata = result["metadata"]
         assert metadata["sweep_parameters"] == sweep_parameters
@@ -806,7 +806,7 @@ class TestSweepAggregation:
 
     def test_per_combination_metrics_structure(self):
         """Test that per_combination_metrics has correct structure."""
-        from aiperf.orchestrator.aggregation import SweepAggregation
+        from aiperf.orchestrator.aggregation import SweepAnalyzer
 
         combo1 = ParameterCombination({"concurrency": 10})
         combo2 = ParameterCombination({"concurrency": 20})
@@ -816,7 +816,7 @@ class TestSweepAggregation:
         }
         sweep_parameters = [{"name": "concurrency", "values": [10, 20]}]
 
-        result = SweepAggregation.compute(per_combination_stats, sweep_parameters)
+        result = SweepAnalyzer.compute(per_combination_stats, sweep_parameters)
 
         per_combination_metrics = result["per_combination_metrics"]
         assert len(per_combination_metrics) == 2
@@ -825,7 +825,7 @@ class TestSweepAggregation:
 
     def test_per_combination_metrics_preserves_stats_structure(self):
         """Test that per_combination_metrics preserves the original stats structure."""
-        from aiperf.orchestrator.aggregation import SweepAggregation
+        from aiperf.orchestrator.aggregation import SweepAnalyzer
 
         combo = ParameterCombination({"concurrency": 10})
         per_combination_stats = {
@@ -836,7 +836,7 @@ class TestSweepAggregation:
         }
         sweep_parameters = [{"name": "concurrency", "values": [10]}]
 
-        result = SweepAggregation.compute(per_combination_stats, sweep_parameters)
+        result = SweepAnalyzer.compute(per_combination_stats, sweep_parameters)
 
         metrics = result["per_combination_metrics"][0]["metrics"]
         assert metrics["request_throughput_avg"]["mean"] == 100.0
@@ -847,7 +847,7 @@ class TestSweepAggregation:
 
     def test_pareto_optimal_uses_identify_pareto_optimal_function(self):
         """Test that pareto_optimal section uses identify_pareto_optimal()."""
-        from aiperf.orchestrator.aggregation import SweepAggregation
+        from aiperf.orchestrator.aggregation import SweepAnalyzer
 
         # Config 1: high throughput, high latency
         # Config 2: low throughput, low latency
@@ -866,7 +866,7 @@ class TestSweepAggregation:
         }
         sweep_parameters = [{"name": "concurrency", "values": [10, 20]}]
 
-        result = SweepAggregation.compute(per_combination_stats, sweep_parameters)
+        result = SweepAnalyzer.compute(per_combination_stats, sweep_parameters)
 
         # Both should be in pareto_optimal (as dicts)
         pareto_params = [item["concurrency"] for item in result["pareto_optimal"]]
@@ -874,7 +874,7 @@ class TestSweepAggregation:
 
     def test_single_value_sweep(self):
         """Test compute() with single sweep value."""
-        from aiperf.orchestrator.aggregation import SweepAggregation
+        from aiperf.orchestrator.aggregation import SweepAnalyzer
 
         combo = ParameterCombination({"concurrency": 10})
         per_combination_stats = {
@@ -885,7 +885,7 @@ class TestSweepAggregation:
         }
         sweep_parameters = [{"name": "concurrency", "values": [10]}]
 
-        result = SweepAggregation.compute(per_combination_stats, sweep_parameters)
+        result = SweepAnalyzer.compute(per_combination_stats, sweep_parameters)
 
         assert result["metadata"]["num_combinations"] == 1
         assert len(result["per_combination_metrics"]) == 1
@@ -893,9 +893,9 @@ class TestSweepAggregation:
 
     def test_empty_sweep_values(self):
         """Test compute() with empty sweep values."""
-        from aiperf.orchestrator.aggregation import SweepAggregation
+        from aiperf.orchestrator.aggregation import SweepAnalyzer
 
-        result = SweepAggregation.compute({}, [])
+        result = SweepAnalyzer.compute({}, [])
 
         assert result["metadata"]["num_combinations"] == 1  # Empty product is 1
         assert result["per_combination_metrics"] == []
@@ -903,7 +903,7 @@ class TestSweepAggregation:
 
     def test_best_configurations_is_dict(self):
         """Test that best_configurations is a dict."""
-        from aiperf.orchestrator.aggregation import SweepAggregation
+        from aiperf.orchestrator.aggregation import SweepAnalyzer
 
         combo1 = ParameterCombination({"concurrency": 10})
         combo2 = ParameterCombination({"concurrency": 20})
@@ -913,13 +913,13 @@ class TestSweepAggregation:
         }
         sweep_parameters = [{"name": "concurrency", "values": [10, 20]}]
 
-        result = SweepAggregation.compute(per_combination_stats, sweep_parameters)
+        result = SweepAnalyzer.compute(per_combination_stats, sweep_parameters)
 
         assert isinstance(result["best_configurations"], dict)
 
     def test_compute_is_static_method(self):
         """Test that compute() is a static method (can be called without instance)."""
-        from aiperf.orchestrator.aggregation import SweepAggregation
+        from aiperf.orchestrator.aggregation import SweepAnalyzer
 
         combo = ParameterCombination({"concurrency": 10})
         per_combination_stats = {
@@ -928,12 +928,12 @@ class TestSweepAggregation:
         sweep_parameters = [{"name": "concurrency", "values": [10]}]
 
         # Should be callable without creating an instance
-        result = SweepAggregation.compute(per_combination_stats, sweep_parameters)
+        result = SweepAnalyzer.compute(per_combination_stats, sweep_parameters)
         assert result is not None
 
     def test_multiple_sweep_parameters(self):
         """Test with multiple sweep parameters."""
-        from aiperf.orchestrator.aggregation import SweepAggregation
+        from aiperf.orchestrator.aggregation import SweepAnalyzer
 
         combo1 = ParameterCombination({"concurrency": 10, "request_rate": 100})
         combo2 = ParameterCombination({"concurrency": 10, "request_rate": 200})
@@ -950,14 +950,14 @@ class TestSweepAggregation:
             {"name": "request_rate", "values": [100, 200]},
         ]
 
-        result = SweepAggregation.compute(per_combination_stats, sweep_parameters)
+        result = SweepAnalyzer.compute(per_combination_stats, sweep_parameters)
 
         assert result["metadata"]["num_combinations"] == 4
         assert len(result["per_combination_metrics"]) == 4
 
     def test_compute_with_complex_stats_structure(self):
         """Test compute() preserves complex nested stats structure."""
-        from aiperf.orchestrator.aggregation import SweepAggregation
+        from aiperf.orchestrator.aggregation import SweepAnalyzer
 
         combo = ParameterCombination({"concurrency": 10})
         per_combination_stats = {
@@ -981,7 +981,7 @@ class TestSweepAggregation:
         }
         sweep_parameters = [{"name": "concurrency", "values": [10]}]
 
-        result = SweepAggregation.compute(per_combination_stats, sweep_parameters)
+        result = SweepAnalyzer.compute(per_combination_stats, sweep_parameters)
 
         metrics = result["per_combination_metrics"][0]["metrics"]
         # Verify all nested fields are preserved
@@ -996,11 +996,11 @@ class TestSweepAggregation:
 
 
 class TestBestConfigurations:
-    """Tests for best_configurations section in SweepAggregation.compute()."""
+    """Tests for best_configurations section in SweepAnalyzer.compute()."""
 
     def test_best_throughput_identified(self):
         """Test that best throughput configuration is correctly identified."""
-        from aiperf.orchestrator.aggregation import SweepAggregation
+        from aiperf.orchestrator.aggregation import SweepAnalyzer
 
         combo1 = ParameterCombination({"concurrency": 10})
         combo2 = ParameterCombination({"concurrency": 20})
@@ -1014,7 +1014,7 @@ class TestBestConfigurations:
         }
         sweep_parameters = [{"name": "concurrency", "values": [10, 20, 30, 40]}]
 
-        result = SweepAggregation.compute(per_combination_stats, sweep_parameters)
+        result = SweepAnalyzer.compute(per_combination_stats, sweep_parameters)
 
         best_throughput = result["best_configurations"]["best_throughput"]
         assert best_throughput["parameters"] == {"concurrency": 40}
@@ -1022,7 +1022,7 @@ class TestBestConfigurations:
 
     def test_best_latency_identified(self):
         """Test that best latency configuration is correctly identified."""
-        from aiperf.orchestrator.aggregation import SweepAggregation
+        from aiperf.orchestrator.aggregation import SweepAnalyzer
 
         combo1 = ParameterCombination({"concurrency": 10})
         combo2 = ParameterCombination({"concurrency": 20})
@@ -1036,7 +1036,7 @@ class TestBestConfigurations:
         }
         sweep_parameters = [{"name": "concurrency", "values": [10, 20, 30, 40]}]
 
-        result = SweepAggregation.compute(per_combination_stats, sweep_parameters)
+        result = SweepAnalyzer.compute(per_combination_stats, sweep_parameters)
 
         best_latency = result["best_configurations"]["best_latency_p99"]
         assert best_latency["parameters"] == {"concurrency": 10}
@@ -1044,7 +1044,7 @@ class TestBestConfigurations:
 
     def test_best_configurations_with_both_metrics(self):
         """Test best configurations when both throughput and latency are present."""
-        from aiperf.orchestrator.aggregation import SweepAggregation
+        from aiperf.orchestrator.aggregation import SweepAnalyzer
 
         combo1 = ParameterCombination({"concurrency": 10})
         combo2 = ParameterCombination({"concurrency": 20})
@@ -1065,7 +1065,7 @@ class TestBestConfigurations:
         }
         sweep_parameters = [{"name": "concurrency", "values": [10, 20, 30]}]
 
-        result = SweepAggregation.compute(per_combination_stats, sweep_parameters)
+        result = SweepAnalyzer.compute(per_combination_stats, sweep_parameters)
 
         # Best throughput at concurrency 30
         assert result["best_configurations"]["best_throughput"]["parameters"] == {
@@ -1081,7 +1081,7 @@ class TestBestConfigurations:
 
     def test_best_configurations_includes_units(self):
         """Test that best configurations include unit fields."""
-        from aiperf.orchestrator.aggregation import SweepAggregation
+        from aiperf.orchestrator.aggregation import SweepAnalyzer
 
         combo1 = ParameterCombination({"concurrency": 10})
         combo2 = ParameterCombination({"concurrency": 20})
@@ -1097,7 +1097,7 @@ class TestBestConfigurations:
         }
         sweep_parameters = [{"name": "concurrency", "values": [10, 20]}]
 
-        result = SweepAggregation.compute(per_combination_stats, sweep_parameters)
+        result = SweepAnalyzer.compute(per_combination_stats, sweep_parameters)
 
         # Check units are included
         assert (
@@ -1107,7 +1107,7 @@ class TestBestConfigurations:
 
     def test_best_configurations_default_units_when_missing(self):
         """Test that default units are used when not present in stats."""
-        from aiperf.orchestrator.aggregation import SweepAggregation
+        from aiperf.orchestrator.aggregation import SweepAnalyzer
 
         combo1 = ParameterCombination({"concurrency": 10})
         combo2 = ParameterCombination({"concurrency": 20})
@@ -1123,7 +1123,7 @@ class TestBestConfigurations:
         }
         sweep_parameters = [{"name": "concurrency", "values": [10, 20]}]
 
-        result = SweepAggregation.compute(per_combination_stats, sweep_parameters)
+        result = SweepAnalyzer.compute(per_combination_stats, sweep_parameters)
 
         # Check default units are used
         assert (
@@ -1133,15 +1133,15 @@ class TestBestConfigurations:
 
     def test_best_configurations_empty_when_no_stats(self):
         """Test that best_configurations is empty dict when no stats provided."""
-        from aiperf.orchestrator.aggregation import SweepAggregation
+        from aiperf.orchestrator.aggregation import SweepAnalyzer
 
-        result = SweepAggregation.compute({}, [])
+        result = SweepAnalyzer.compute({}, [])
 
         assert result["best_configurations"] == {}
 
     def test_best_configurations_only_throughput_when_latency_missing(self):
         """Test that only best_throughput is included when latency metric is missing."""
-        from aiperf.orchestrator.aggregation import SweepAggregation
+        from aiperf.orchestrator.aggregation import SweepAnalyzer
 
         combo1 = ParameterCombination({"concurrency": 10})
         combo2 = ParameterCombination({"concurrency": 20})
@@ -1151,7 +1151,7 @@ class TestBestConfigurations:
         }
         sweep_parameters = [{"name": "concurrency", "values": [10, 20]}]
 
-        result = SweepAggregation.compute(per_combination_stats, sweep_parameters)
+        result = SweepAnalyzer.compute(per_combination_stats, sweep_parameters)
 
         # Should have best_throughput
         assert "best_throughput" in result["best_configurations"]
@@ -1164,7 +1164,7 @@ class TestBestConfigurations:
 
     def test_best_configurations_only_latency_when_throughput_missing(self):
         """Test that only best_latency_p99 is included when throughput metric is missing."""
-        from aiperf.orchestrator.aggregation import SweepAggregation
+        from aiperf.orchestrator.aggregation import SweepAnalyzer
 
         combo1 = ParameterCombination({"concurrency": 10})
         combo2 = ParameterCombination({"concurrency": 20})
@@ -1174,7 +1174,7 @@ class TestBestConfigurations:
         }
         sweep_parameters = [{"name": "concurrency", "values": [10, 20]}]
 
-        result = SweepAggregation.compute(per_combination_stats, sweep_parameters)
+        result = SweepAnalyzer.compute(per_combination_stats, sweep_parameters)
 
         # Should have best_latency_p99
         assert "best_latency_p99" in result["best_configurations"]
@@ -1187,7 +1187,7 @@ class TestBestConfigurations:
 
     def test_best_configurations_handles_partial_metric_presence(self):
         """Test that best configurations handles case where metric is missing in some values."""
-        from aiperf.orchestrator.aggregation import SweepAggregation
+        from aiperf.orchestrator.aggregation import SweepAnalyzer
 
         combo1 = ParameterCombination({"concurrency": 10})
         combo2 = ParameterCombination({"concurrency": 20})
@@ -1203,7 +1203,7 @@ class TestBestConfigurations:
         }
         sweep_parameters = [{"name": "concurrency", "values": [10, 20]}]
 
-        result = SweepAggregation.compute(per_combination_stats, sweep_parameters)
+        result = SweepAnalyzer.compute(per_combination_stats, sweep_parameters)
 
         # Should have best_throughput (present in all)
         assert "best_throughput" in result["best_configurations"]
@@ -1213,7 +1213,7 @@ class TestBestConfigurations:
 
     def test_best_configurations_single_value(self):
         """Test best configurations with single sweep value."""
-        from aiperf.orchestrator.aggregation import SweepAggregation
+        from aiperf.orchestrator.aggregation import SweepAnalyzer
 
         combo = ParameterCombination({"concurrency": 10})
         per_combination_stats = {
@@ -1224,7 +1224,7 @@ class TestBestConfigurations:
         }
         sweep_parameters = [{"name": "concurrency", "values": [10]}]
 
-        result = SweepAggregation.compute(per_combination_stats, sweep_parameters)
+        result = SweepAnalyzer.compute(per_combination_stats, sweep_parameters)
 
         # Single value is best for both
         assert result["best_configurations"]["best_throughput"]["parameters"] == {
@@ -1236,7 +1236,7 @@ class TestBestConfigurations:
 
     def test_best_configurations_structure(self):
         """Test that best configurations have correct structure with parameters, metric, and unit."""
-        from aiperf.orchestrator.aggregation import SweepAggregation
+        from aiperf.orchestrator.aggregation import SweepAnalyzer
 
         combo1 = ParameterCombination({"concurrency": 10})
         combo2 = ParameterCombination({"concurrency": 20})
@@ -1252,7 +1252,7 @@ class TestBestConfigurations:
         }
         sweep_parameters = [{"name": "concurrency", "values": [10, 20]}]
 
-        result = SweepAggregation.compute(per_combination_stats, sweep_parameters)
+        result = SweepAnalyzer.compute(per_combination_stats, sweep_parameters)
 
         # Check structure of best_throughput
         best_throughput = result["best_configurations"]["best_throughput"]
@@ -1274,7 +1274,7 @@ class TestBestConfigurations:
 
     def test_best_configurations_realistic_scenario(self):
         """Test best configurations with realistic sweep data."""
-        from aiperf.orchestrator.aggregation import SweepAggregation
+        from aiperf.orchestrator.aggregation import SweepAnalyzer
 
         # Realistic scenario: throughput increases with concurrency, latency also increases
         combo1 = ParameterCombination({"concurrency": 10})
@@ -1304,7 +1304,7 @@ class TestBestConfigurations:
         }
         sweep_parameters = [{"name": "concurrency", "values": [10, 20, 30, 40]}]
 
-        result = SweepAggregation.compute(per_combination_stats, sweep_parameters)
+        result = SweepAnalyzer.compute(per_combination_stats, sweep_parameters)
 
         # Best throughput at highest concurrency
         best_throughput = result["best_configurations"]["best_throughput"]
@@ -1319,12 +1319,12 @@ class TestBestConfigurations:
         assert best_latency["unit"] == "ms"
 
 
-class TestSweepAggregationLatencyResolution:
+class TestSweepAnalyzerLatencyResolution:
     """Tests for latency metric resolution in sweep aggregation."""
 
     def test_time_to_first_token_p99_recognized_for_best_latency(self):
         """time_to_first_token_p99 is the canonical TTFT key; sweep must recognize it."""
-        from aiperf.orchestrator.aggregation import SweepAggregation
+        from aiperf.orchestrator.aggregation import SweepAnalyzer
 
         combo1 = ParameterCombination({"concurrency": 2})
         combo2 = ParameterCombination({"concurrency": 4})
@@ -1340,14 +1340,14 @@ class TestSweepAggregationLatencyResolution:
         }
         sweep_params = [{"name": "concurrency", "values": [2, 4]}]
 
-        result = SweepAggregation.compute(per_combination_stats, sweep_params)
+        result = SweepAnalyzer.compute(per_combination_stats, sweep_params)
 
         assert "best_latency_p99" in result["best_configurations"]
         assert result["best_configurations"]["best_latency_p99"]["metric"] == 5.0
 
     def test_time_to_first_token_p99_used_for_pareto(self):
         """Pareto analysis should work with time_to_first_token_p99."""
-        from aiperf.orchestrator.aggregation import SweepAggregation
+        from aiperf.orchestrator.aggregation import SweepAnalyzer
 
         combo1 = ParameterCombination({"concurrency": 2})
         combo2 = ParameterCombination({"concurrency": 4})
@@ -1363,13 +1363,13 @@ class TestSweepAggregationLatencyResolution:
         }
         sweep_params = [{"name": "concurrency", "values": [2, 4]}]
 
-        result = SweepAggregation.compute(per_combination_stats, sweep_params)
+        result = SweepAnalyzer.compute(per_combination_stats, sweep_params)
 
         assert len(result["pareto_optimal"]) == 2
 
     def test_ttft_preferred_over_request_latency_when_both_present(self):
         """When both TTFT and request_latency exist, TTFT should be used."""
-        from aiperf.orchestrator.aggregation import SweepAggregation
+        from aiperf.orchestrator.aggregation import SweepAnalyzer
 
         combo1 = ParameterCombination({"concurrency": 2})
         per_combination_stats = {
@@ -1381,13 +1381,13 @@ class TestSweepAggregationLatencyResolution:
         }
         sweep_params = [{"name": "concurrency", "values": [2]}]
 
-        result = SweepAggregation.compute(per_combination_stats, sweep_params)
+        result = SweepAnalyzer.compute(per_combination_stats, sweep_params)
 
         assert result["best_configurations"]["best_latency_p99"]["metric"] == 3.0
 
     def test_request_latency_p99_fallback_for_non_streaming(self):
         """Non-streaming endpoints without TTFT fall back to request_latency_p99."""
-        from aiperf.orchestrator.aggregation import SweepAggregation
+        from aiperf.orchestrator.aggregation import SweepAnalyzer
 
         combo1 = ParameterCombination({"concurrency": 2})
         per_combination_stats = {
@@ -1398,6 +1398,6 @@ class TestSweepAggregationLatencyResolution:
         }
         sweep_params = [{"name": "concurrency", "values": [2]}]
 
-        result = SweepAggregation.compute(per_combination_stats, sweep_params)
+        result = SweepAnalyzer.compute(per_combination_stats, sweep_params)
 
         assert result["best_configurations"]["best_latency_p99"]["metric"] == 10.0

@@ -267,8 +267,6 @@ def _run_multi_benchmark(
 
     # Print banner based on mode
     logger.info("=" * 80)
-    # Print banner based on mode
-    logger.info("=" * 80)
     if is_sweep and is_confidence:
         param_name, param_values = sweep_info
         logger.info("Starting Parameter Sweep with Confidence Trials")

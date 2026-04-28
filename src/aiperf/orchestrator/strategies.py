@@ -595,7 +595,12 @@ class ParameterSweepStrategy(ExecutionStrategy):
 
         config = base_config.model_copy(deep=True)
         setattr(config.loadgen, self.parameter_name, value)
-        config.loadgen.parameter_sweep_mode = None
+        config.loadgen.parameter_sweep_mode = "repeated"
+        config.loadgen.parameter_sweep_cooldown_seconds = 0.0
+        config.loadgen.parameter_sweep_same_seed = False
+        config.loadgen.model_fields_set.discard("parameter_sweep_mode")
+        config.loadgen.model_fields_set.discard("parameter_sweep_cooldown_seconds")
+        config.loadgen.model_fields_set.discard("parameter_sweep_same_seed")
 
         if self.base_seed is None:
             if config.input.random_seed is not None:
@@ -693,7 +698,7 @@ class ParameterSweepStrategy(ExecutionStrategy):
         """
         from aiperf.orchestrator.aggregation.base import AggregateResult
         from aiperf.orchestrator.aggregation.sweep import (
-            SweepAggregation,
+            SweepAnalyzer,
         )
 
         per_combination_stats = self._build_per_combination_stats(results)
@@ -704,7 +709,7 @@ class ParameterSweepStrategy(ExecutionStrategy):
         sweep_parameters = [
             {"name": self.parameter_name, "values": sorted(self.parameter_values)}
         ]
-        sweep_dict = SweepAggregation.compute(per_combination_stats, sweep_parameters)
+        sweep_dict = SweepAnalyzer.compute(per_combination_stats, sweep_parameters)
 
         total_runs = len(results)
         successful_runs = len([r for r in results if r.success])
@@ -758,11 +763,11 @@ class ParameterSweepStrategy(ExecutionStrategy):
             logger.info(f"  Pareto optimal points: {pareto_optimal}")
 
     def _build_per_combination_stats(self, results: list[RunResult]) -> dict[Any, dict]:
-        """Convert single-run JsonMetricResult into SweepAggregation input format.
+        """Convert single-run JsonMetricResult into SweepAnalyzer input format.
 
         For sweep-only, each value has exactly one run. Metrics are flattened to
         ``{metric_name}_{stat_key}`` so the keys match what confidence aggregation
-        produces and what SweepAggregation.compute() expects.
+        produces and what SweepAnalyzer.compute() expects.
         """
         from aiperf.common.constants import STAT_KEYS
         from aiperf.orchestrator.aggregation.sweep import ParameterCombination
@@ -1081,7 +1086,7 @@ class SweepConfidenceStrategy(ExecutionStrategy):
         from aiperf.orchestrator.aggregation.confidence import ConfidenceAggregation
         from aiperf.orchestrator.aggregation.sweep import (
             ParameterCombination,
-            SweepAggregation,
+            SweepAnalyzer,
         )
 
         confidence_level = config.loadgen.confidence_level
@@ -1145,7 +1150,7 @@ class SweepConfidenceStrategy(ExecutionStrategy):
                 "values": sorted(self.sweep.parameter_values),
             }
         ]
-        sweep_dict = SweepAggregation.compute(per_combination_stats, sweep_parameters)
+        sweep_dict = SweepAnalyzer.compute(per_combination_stats, sweep_parameters)
 
         total_runs = len(results)
         successful_runs = len([r for r in results if r.success])

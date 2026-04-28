@@ -17,7 +17,7 @@ class AggregateSweepJsonExporter(AggregateBaseExporter):
     - pareto_optimal: List of Pareto optimal parameter combinations
 
     Design:
-    - Uses the dict returned by SweepAggregation.compute()
+    - Uses the dict returned by SweepAnalyzer.compute()
     - Serializes directly to JSON (no Pydantic models needed)
     - Ensures consistency with confidence aggregate format
     """

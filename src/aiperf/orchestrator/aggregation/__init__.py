@@ -16,7 +16,7 @@ from aiperf.orchestrator.aggregation.sweep import (
     Objective,
     OptimizationDirection,
     ParameterCombination,
-    SweepAggregation,
+    SweepAnalyzer,
     identify_pareto_optimal,
 )
 
@@ -30,6 +30,6 @@ __all__ = [
     "Objective",
     "OptimizationDirection",
     "ParameterCombination",
-    "SweepAggregation",
+    "SweepAnalyzer",
     "identify_pareto_optimal",
 ]

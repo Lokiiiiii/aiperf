@@ -118,7 +118,7 @@ class TestFixedTrialsAggregation:
         assert aggregate.num_successful_runs == 2
 
 
-class TestParameterSweepAggregation:
+class TestParameterSweepAnalyzer:
     """Test ParameterSweepStrategy.aggregate() for sweep-only mode."""
 
     @pytest.fixture

@@ -780,6 +780,18 @@ class LoadGeneratorConfig(BaseConfig):
                     f"For parameter sweep, provide multiple values: --concurrency 10,20,30"
                 )
 
+            # Check for duplicate values
+            if len(set(self.concurrency)) < len(self.concurrency):
+                duplicates = sorted(
+                    {v for v in self.concurrency if self.concurrency.count(v) > 1}
+                )
+                raise ValueError(
+                    f"Invalid concurrency list: {self.concurrency}. "
+                    f"Duplicate values would overwrite each other's artifacts: {duplicates}. "
+                    f"For variance / confidence reporting at a single concurrency, use "
+                    f"--num-profile-runs N instead of repeating the value."
+                )
+
             # Check all values are >= 1
             invalid_values = [v for v in self.concurrency if v < 1]
             if invalid_values:

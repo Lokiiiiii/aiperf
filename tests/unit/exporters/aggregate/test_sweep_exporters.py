@@ -18,7 +18,7 @@ from aiperf.orchestrator.aggregation.base import AggregateResult
 @pytest.fixture
 def sample_sweep_aggregate():
     """Create a sample sweep aggregate result for testing."""
-    # Simulate the output from SweepAggregation.compute() with new format
+    # Simulate the output from SweepAnalyzer.compute() with new format
     sweep_data = {
         "metadata": {
             "sweep_parameters": [{"name": "concurrency", "values": [10, 20, 30]}],
